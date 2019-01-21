@@ -4,7 +4,7 @@ namespace Pdf {
 
 public class Inflator : InpBitStream
 {
-  int TraceLevel = 1;
+  int TraceLevel = 0;
   int BlockCount;
 
   public Generic.List<byte> Go ( byte [] input ) // RFC 1951
