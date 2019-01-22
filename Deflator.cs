@@ -195,7 +195,10 @@ sealed class Deflator
     { 
       if ( input[ position + bestMatch ] == input[ oldPosition + bestMatch ] )
       {
-        int match = MatchLength( input, position, oldPosition );
+        int match = 0;  
+        while ( match < avail && input[ position + match ] == input[ oldPosition + match ] ) 
+          match += 1;
+
         if ( match > bestMatch )
         {
           bestMatch = match;
@@ -209,19 +212,6 @@ sealed class Deflator
     }
     distance = bestDistance;
     return bestMatch;
-  }
-
-  private static int MatchLength( byte [] input, int p, int q )
-  {
-    int end = input.Length;
-    if ( end > p + MaxMatch ) end = p + MaxMatch;
-    int pstart = p;
-    while ( p < end && input[ p ] == input [ q ] )
-    {
-      p += 1;
-      q += 1;
-    }
-    return p - pstart;
   }
 
   private static int CalcHashShift( int n )
@@ -589,19 +579,24 @@ sealed class Deflator
 
 struct HuffmanCoding // Variable length coding.
 {
-  public int Count; // Number of used symbols.
-  public int [] Used; // Count of how many times a symbol is used in the block being encoded.
+  public ushort Count; // Number of used symbols.
   public byte [] Bits; // Number of bits used to encode a symbol.
   public ushort [] Codes; // Huffman code for a symbol ( bit 0 is most significant ).
-  private int Limit; // Maxiumum number of bits for a code.
+  public int [] Used; // Count of how many times a symbol is used in the block being encoded.
 
-  public HuffmanCoding( int limit, int symbols )
+  private int Limit; // Maximum number of bits for a code.
+  private ushort [] Tree;
+  private byte [] Depth;
+
+  public HuffmanCoding( int limit, ushort symbols )
   {
     Limit = limit;
     Count = symbols;
-    Used = new int[ symbols ];
     Bits = new byte[ symbols ];
     Codes = new ushort[ symbols ];
+    Used = new int[ symbols * 2 ]; // Second half of array is for tree nodes.
+    Depth = new byte[ symbols * 2 ]; // Second half of array is for tree nodes.
+    Tree = new ushort[ symbols * 2] ; // First half is one branch, second half is other branch.
   }
 
   public int Total()
@@ -614,34 +609,41 @@ struct HuffmanCoding // Variable length coding.
 
   public bool ComputeCodes() // returns true if Limit is exceeded.
   {
-    int count = Count;
+    ushort count = Count;
 
-    Heap<TreeNode> heap = new Heap<TreeNode>( count, TreeNode.LessThan );
+    Heap<ushort> heap = new Heap<ushort>( count, TreeNodeLessThan );
 
-    for ( int i = 0; i < Count; i += 1 )
+    for ( ushort i = 0; i < Count; i += 1 )
     {
       int used = Used[ i ];
-      if ( used > 0 ) heap.Insert( new Leaf( (ushort)i, used ) );
+      if ( used > 0 ) heap.Insert( i );
     }
 
     int maxBits = 0;
 
     if ( heap.Count == 1 )
     { 
-      heap.Remove().GetBits( Bits, 1 );
+      GetBits( heap.Remove(), 1 );
       maxBits = 1;
     }
     else if ( heap.Count > 1 )
     {
+      ushort treeNode = Count;
       do // Keep pairing the lowest frequency TreeNodes.
       {
-        heap.Insert( new Branch( heap.Remove(), heap.Remove() ) );
+        ushort left = heap.Remove(); Tree[ treeNode - Count ] = left;
+        ushort right = heap.Remove(); Tree[ treeNode ] = right;
+        Used[ treeNode ] = Used[ left ] + Used[ right ];
+        int d1 = Depth[ left ], d2 = Depth[ right ]; 
+        Depth [ treeNode ] = (byte)( ( d1 > d2 ? d1 : d2 ) + 1 );
+        heap.Insert( treeNode );
+        treeNode += 1;
       }  while ( heap.Count > 1 );
 
-      TreeNode root = heap.Remove();
-      maxBits = root.Depth;
+      int root = heap.Remove();
+      maxBits = Depth[ root ];
       if ( maxBits > Limit ) return true;
-      root.GetBits( Bits, 0 ); // Walk the tree to find the code lengths (Bits).
+      GetBits( root, 0 ); // Walk the tree to find the code lengths (Bits).
     }
 
     // Compute codes, code below is from RFC 1951 page 7.
@@ -671,11 +673,31 @@ struct HuffmanCoding // Variable length coding.
     while ( count > 0 && Bits[ count - 1 ] == 0 ) count -= 1;
     Count = count;
 
-    //System.Console.WriteLine( "HuffEncoder.ComputeCodes" );
+    // System.Console.WriteLine( "HuffEncoder.ComputeCodes" );
     //    for ( int i = 0; i < count; i += 1 ) if ( Bits[ i ] > 0 )
     //      System.Console.WriteLine( "i=" + i + " len=" + Bits[ i ] + " tc=" + Codes[ i ].ToString("X") + " freq=" + Used[ i ] );
 
     return false;
+  }
+
+  private bool TreeNodeLessThan( ushort treeNode1, ushort treeNode2 )
+  {
+    int ud = Used[ treeNode1 ] - Used[ treeNode2 ];
+    return ud < 0 || ud == 0 && Depth[ treeNode1 ] < Depth[ treeNode2 ];
+  }
+
+  private void GetBits( int treeNode, int length )
+  {
+    if ( treeNode < Count ) // treeNode is a leaf.
+    {
+      Bits[ treeNode ] = (byte)length;
+    }
+    else 
+    {
+      length += 1;
+      GetBits( Tree[ treeNode - Count ], length );
+      GetBits( Tree[ treeNode ], length );
+    }
   }
 
   private static int Reverse( int x, int bits )
@@ -691,62 +713,13 @@ struct HuffmanCoding // Variable length coding.
     return result; 
   } 
 
-  private abstract class TreeNode
-  { 
-    public int Used; 
-    public byte Depth; 
-
-    public static bool LessThan( TreeNode a, TreeNode b )
-    { 
-      return a.Used < b.Used || a.Used == b.Used && a.Depth < b.Depth;
-    }
-
-    public abstract void GetBits( byte [] nbits, int length );
-
-  }
-
-  private class Leaf : TreeNode
-  {
-    public ushort Code; 
-
-    public Leaf( ushort code, int used )
-    {
-      Code = code;
-      Used = used;
-    }
-
-    public override void GetBits( byte [] nbits, int length )
-    { 
-      nbits[ Code ] = (byte)length;
-    }
-  } // end class Leaf
-
-  private class Branch : TreeNode
-  {
-    TreeNode Left, Right; 
-
-    public Branch( TreeNode left, TreeNode right )
-    {
-      Left = left;
-      Right = right;
-      Used = left.Used + right.Used;
-      Depth = (byte)( 1 + ( left.Depth > right.Depth ? left.Depth : right.Depth ) );
-    }
-
-    public override void GetBits( byte [] nbits, int length )
-    { 
-      Left.GetBits( nbits, length + 1 ); 
-      Right.GetBits( nbits, length + 1 ); 
-    }
-  } // end class Branch
-
 } // end struct HuffmanCoding
 
 
 // ******************************************************************************
 
 
-sealed class Heap<T> // An array organised so the smallest element can be efficiently removed.
+struct Heap<T> // An array organised so the smallest element can be efficiently removed.
 {
   public delegate bool DLessThan( T a, T b );
 
@@ -757,6 +730,7 @@ sealed class Heap<T> // An array organised so the smallest element can be effici
 
   public Heap ( int capacity, DLessThan lessThan )
   {
+    _Count = 0;
     Array = new T[ capacity ];
     LessThan = lessThan;
   }
@@ -766,7 +740,7 @@ sealed class Heap<T> // An array organised so the smallest element can be effici
     int j = _Count++;
     while ( j > 0 )
     {
-      int p = ( j - 1 ) / 2; // Index of parent.
+      int p = ( j - 1 ) >> 1; // Index of parent.
       T pe = Array[ p ];
       if ( !LessThan( e, pe ) ) break;
       Array[ j ] = pe; // Demote parent.
@@ -784,7 +758,7 @@ sealed class Heap<T> // An array organised so the smallest element can be effici
     int j = 0;
     while ( true )
     {
-      int c = j * 2 + 1; if ( c >= _Count ) break;
+      int c = ( j + j ) + 1; if ( c >= _Count ) break;
       T ce = Array[ c ];
       if ( c + 1 < _Count )
       {
