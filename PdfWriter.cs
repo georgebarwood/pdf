@@ -7,22 +7,47 @@ namespace Pdf {
 public class PdfWriter // class for writing PDF ( Portable Document Format ) files ( https://en.wikipedia.org/wiki/PDF ) .
 {
   // Example usage
-  static byte [] Example() 
+  public static void Example1() 
   {
-    IO.MemoryStream ms = new IO.MemoryStream(); // For output
-    Pdf.PdfWriter w = new Pdf.PdfWriter(); 
+    using( IO.FileStream fs = IO.File.Create( "Example1.pdf") )
+    {
+      PdfWriter w = new Pdf.PdfWriter(); 
+      w.Fonts = Pdf.StandardFontFamily.Times(); // Sets font family.
+      w.Init( fs, "Hello World" ); // Sets output stream and document title.
 
-    // Optional style settings.
-    w.Justify = 2; // Causes text to be justified.
-    w.SetColumns( 2, 5 ); // Sets pages to be formatted as two columns, 5pt space between columns.
-    w.Fonts = Pdf.StandardFontFamily.Times(); // Sets font family.
-    w.SetFont( w.Fonts[0], 15 ); // Sets font and font size.
+      // Optional style settings.
+      w.Justify = 2; // Causes text to be justified.
+      w.SetColumns( 3, 5 ); // Sets pages to be formatted as 3 columns, 5pt space between columns.
+      w.SetFont( w.Fonts[0], 10 ); // Sets font and font size.
 
-    w.Init( ms, "Hello World" ); // Sets output stream and document title.
+      for ( int i = 0; i < 100; i += 1 ) w.Txt( "Some text which is long enough to demonstrate word wrapping. " );
+      w.Finish();
+    }
+  }
 
-    w.Txt( "Hello world" );
-    w.Finish();
-    return ms.ToArray(); // Result is byte array containing "Hello World" in Portable Document Format.
+  // Example with an image and embedded font ( subset ).
+  public static void Example2() 
+  {
+    byte [] freeSansBytes = Util.GetFile( @"c:\PdfFiles\FreeSans.ttf" );
+    byte [] myImageBytes = Util.GetFile( @"c:\PdfFiles\666.png" );
+
+    using( IO.FileStream fs = IO.File.Create( "Example2.pdf") )
+    {
+      PdfWriter w = new Pdf.PdfWriter(); 
+      w.Init( fs, "Hello World." );
+
+      PdfImage myImage = ImageUtil.Add( w, myImageBytes ); 
+      w.LineAdvance = myImage.Height / 2 + 10; // Make space for the image
+      w.NewLine();
+      w.LineAdvance = 15; // Restore LineAdvance to default value.
+      w.CP.DrawImage( myImage, w.CP.X, w.CP.Y, 0.5f );
+
+      PdfFont freeSans = new TrueTypeFont( "DJGTGD+Sans", freeSansBytes );
+      w.SetFont( freeSans, 12 );
+      w.Txt( "Hello world" );
+
+      w.Finish();
+    }
   }
 
   // PDF spec is at https://www.adobe.com/content/dam/acom/en/devnet/pdf/pdfs/PDF32000_2008.pdf
@@ -112,7 +137,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     p.MarginLeft = PageMarginLeft; p.MarginRight = PageMarginRight;
     p.MarginTop = PageMarginTop; p.MarginBottom = PageMarginBottom;
     Pages.Add( p ); p.Number = Pages.Count; CP = p; 
-    FirstLine = true; LinePos = 0; SpaceCount = 0; LineCharCount = 0; 
+    FirstLine = true; LinePos = 0; SpaceCount = 0; LineCharCount = 0;
     CurColumn = 0; LineMarginBefore = 0;
     StartPage();
     CP.InitTxtFrom( old ); 
@@ -122,6 +147,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   {
     float space = LineLength - LinePos; if ( wrap && SpaceCount > 0 ) space += ( LinePos - SpacePos );
     float centerjustify = Justify == 1 ? space / 2 : 0; // Center justification
+    int lineCharCount = LineCharCount;
 
     // GetSpace if needed.
     if ( !FirstLine && CP.Y - LineAdvance < CP.MarginBottom ) NewColumn();
@@ -135,7 +161,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     {
       CP.Td( centerjustify + CP.MarginLeft + LineMarginBefore - CP.X, -LineAdvance );
     }
-    CP.SetCharSpacing( wrap && Justify == 2 ? space / LineCharCount : 0 );
+    CP.SetCharSpacing( wrap && Justify == 2 ? space / lineCharCount : 0 );
     Line.Flush( CP );
     LinePos = 0; SpaceCount = 0; LineCharCount = 0;
   }
