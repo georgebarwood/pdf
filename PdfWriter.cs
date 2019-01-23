@@ -13,16 +13,16 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     {
       PdfWriter w = new Pdf.PdfWriter(); 
       w.Title = "Hello World";
-      w.Fonts = Pdf.StandardFontFamily.Times(); // Sets font family.
-      // PageLayout may be adjusted here.
-      w.Initialise( fs );
+      w.Fonts = Pdf.StandardFontFamily.Times(); // Sets font family ( optional, default is Helvetica ).
+      // Default PageLayout (width, height, margins) may be adjusted here.
+      w.SetColumns( 3, 5 ); // Sets pages to be formatted as 3 columns, 5pt space between columns.
+      w.Initialise( fs ); // Creates first page, now ready to write text, etc.
 
       // Optional style settings.
       w.Justify = 2; // Causes text to be justified.
-      w.SetColumns( 3, 5 ); // Sets pages to be formatted as 3 columns, 5pt space between columns.
-      w.SetFont( w.Fonts[0], 10 ); // Sets font and font size.
+      w.SetFont( w.Fonts[0], 9 ); // Sets font and font size.
 
-      for ( int i = 0; i < 100; i += 1 ) w.Txt( "Some text which is long enough to demonstrate word wrapping. " );
+      for ( int i = 0; i < 100; i += 1 ) w.Txt( "Some Times Roman text which is long enough to demonstrate word wrapping. " );
       w.Finish();
     }
   }
@@ -83,7 +83,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   public void NewPage() { NewLine(); NewPage0(); } // Force a new page.
 
   // Functions to adjust text style.
-  public void SetFont( PdfFont f, int fontSize ) { f.GetObj( this );  Word.Font( f, fontSize ); CurFont = f; FontSize = fontSize; }
+  public void SetFont( PdfFont f, int fontSize ) { Word.Font( f, fontSize ); CurFont = f; FontSize = fontSize; }
   public void SetSuper( int x ) { Word.Super( x ); Super = x; }
   public void SetColor( String color ) { Word.Color( color ); }
   public void SetOther( String other ) { Word.Other( other ); }
@@ -99,8 +99,9 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   // Line parameters ( in pt ).
   public float LineLength = 523, LineAdvance=15, LineMarginBefore=0;
 
-  // Text style parameters, updated by various functions such as SetFont, SetSuper etc.
   public FontFamily Fonts;
+
+  // Text style parameters, updated by various functions such as SetFont, SetSuper etc.
   public PdfFont CurFont; 
   public int FontSize=12, Super;
 
@@ -111,14 +112,14 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   public IO.Stream OS; // Final output stream.
   public long OS_Total = 0; // Total bytes written to OS ( for xref table ), must be updated if writing direct to OS.
   public Generic.List<PdfPage> Pages = new Generic.List<PdfPage>();
+  public Generic.List<DynObj> DynObjs = new Generic.List<DynObj>();
+  public Generic.List<long> Xref = new Generic.List<long>();
 
   // Compression option
   public bool Compress = true; // Set to false to make PDF easier to examine when testing or if compression not wanted.
 
   // Private fields.
 
-  private Generic.List<DynObj> DynObjs = new Generic.List<DynObj>();
-  private Generic.List<long> Xref = new Generic.List<long>();
   private WordBuffer Word = new WordBuffer();
   private LineBuffer Line = new LineBuffer();
 
@@ -127,7 +128,9 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   private int SpaceCount, WordCharCount, LineCharCount, Columns = 1, CurColumn = 0;
   private bool FirstLine;
 
-  public void InitFont( PdfFont f ) { f.GetObj( this ); } // Only necessary if page font is set directly.
+  // End fields.
+
+  public void InitFont( PdfFont f ) { f.GetObj( this ); } // Only necessary if a page font is set directly.
 
   public virtual void NewColumn()
   {
@@ -185,6 +188,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   public void Txt( String s, int start, int end ) // Writes text word-wrapping to new line or page as required.
   {
+    InitFont( CurFont );
     int i = start;
     while ( i < end ) 
     {
