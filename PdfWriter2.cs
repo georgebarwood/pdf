@@ -19,7 +19,10 @@ class PdfWriter2 : PdfWriter
     if ( BorderPadding > 0 ) // Draw a border box
     {
       int BP = BorderPadding;
-      float x0 = CP.MarginLeft - BP, x1 = CP.Width - CP.MarginRight + BP, y0 = CP.MarginBottom - BP, y1 = CP.Height - CP.MarginTop + BP;
+      float x0 = CP.Layout.MarginLeft - BP, 
+         x1 = CP.Layout.Width - CP.Layout.MarginRight + BP, 
+         y0 = CP.Layout.MarginBottom - BP, 
+         y1 = CP.Layout.Height - CP.Layout.MarginTop + BP;
       CP.Rect(x0, y0, x1-x0, y1-y0);
     }
     CP.TSW( "\nq" ); // Save state
@@ -32,7 +35,7 @@ class PdfWriter2 : PdfWriter
     CP.TSW( "\nQ" ); // Restore state
     if ( NumberPages )
     {
-      CP.Goto( CP.MarginLeft, CP.MarginBottom - BorderPadding - 15 );
+      CP.Goto( CP.Layout.MarginLeft, CP.Layout.MarginBottom - BorderPadding - 15 );
       CP.SetFont( Fonts[0], 10 ); 
       CP.Txt( "Page " + CP.Number + " of " + Pages.Count );
     }
