@@ -1,7 +1,7 @@
 # pdf
 C# software to write PDF files
 
-This is intended to be a small, simple but extensible library to allow for PDF files to be written.
+This is intended to be a small, simple but extensible library to allow PDF files to be written.
 
 The basic functionality supports multi-column layout and the standard fonts.
 
