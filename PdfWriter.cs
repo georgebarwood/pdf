@@ -28,8 +28,8 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   // Example with an image and embedded font ( subset ).
   public static void Example2() 
   {
-    byte [] freeSansBytes = Util.GetFile( @"c:\PdfFiles\FreeSans.ttf" );
     byte [] myImageBytes = Util.GetFile( @"c:\PdfFiles\666.png" );
+    byte [] freeSansBytes = Util.GetFile( @"c:\PdfFiles\FreeSans.ttf" );
 
     using( IO.FileStream fs = IO.File.Create( "Example2.pdf") )
     {
@@ -52,20 +52,19 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   // PDF spec is at https://www.adobe.com/content/dam/acom/en/devnet/pdf/pdfs/PDF32000_2008.pdf
   // Required additional files: PdfPage.cs, Deflator.cs, PdfFont.cs, PdfMetric.cs.
-  // Optional additional files: PdfTrueType.cs, TrueType.cs, PdfPng.cs, PDfOther.cs, Util.cs, Pdfwriter2.cs.
+  // Optional additional files: PdfTrueType.cs, TrueType.cs, PdfPng.cs, Inflator.cs, PDfOther.cs, Util.cs, Pdfwriter2.cs.
 
   public void Init( IO.Stream os, String title ) { OS = os; Title = title; Put( "%PDF-1.4\n" ); GetReadyToWrite(); }
   public String Title = "Untitled"; // Assign a string to set the PDF title.
   public void Txt( String s ) {  Txt( s,0,s.Length ); } // Write justified text, word-wrapping to new line or page as required.
   public void NewLine() { FlushWord(); FinishLine( false ); } // Force a new line.
   public void NewPage() { NewLine(); NewPage0(); } // Force a new page.
-  
+
   // Page parameters
-  public int PageWidth = 595, PageHeight = 842; // Units are pt, default is A4
-  public int PageMarginLeft = 36, PageMarginRight = 36, PageMarginTop= 36, PageMarginBottom = 36;
+  public PageLayout Page = new PageLayout( 595, 842, 36 ); // Default is A4, margin 36 pt.
   public PdfPage CP; // Current page, see PdfPage.cs for interface.
 
-  // Line parameters ( in pt ) .
+  // Line parameters ( in pt ).
   public float LineLength = 523, LineAdvance=15, LineMarginBefore=0;
 
   // Text style parameters, updated by various functions such as SetFont, SetSuper etc.
@@ -104,7 +103,9 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     long startxref = OS_Total; int xc = Xref.Count+1;
     Put( "xref\n0 " + xc + "\n0000000000 65535 f\n" );
     for ( int i=0; i<Xref.Count; i += 1 ) Put( Xref[i].ToString( "D10" ) + " 00000 n\n" );
-    Put( "trailer\n<</Size " + xc + "/Root " + catObj + " 0 R" + "/Info " + infoObj + " 0 R" + ">>\nstartxref\n" + startxref + "\n%%EOF\n" );
+    Put( "trailer\n<</Size " + xc + "/Root " + catObj + " 0 R" 
+      + ( infoObj == 0 ? "" : "/Info " + infoObj )
+      + " 0 R" + ">>\nstartxref\n" + startxref + "\n%%EOF\n" );
   }
 
   public void InitFont( PdfFont f ) { f.GetObj( this ); } // Only necessary if page font is set directly.
@@ -113,7 +114,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   { 
     Columns = n; 
     ColSpace = colSpace;
-    LineLength = ( ( PageWidth + colSpace - PageMarginRight - PageMarginLeft ) / n ) - colSpace;
+    LineLength = ( ( Page.Width + colSpace - Page.MarginRight - Page.MarginLeft ) / n ) - colSpace;
   }
 
   public virtual void NewColumn()
@@ -130,12 +131,10 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     }
   }
 
-  void NewPage0() // Start a new page ( without flushing word buffer, so current word can be carried over to next page ).
+  private void NewPage0() // Start a new page ( without flushing word buffer, so current word can be carried over to next page ).
   { 
     PdfPage old=CP, p = new PdfPage();
-    p.Height = PageHeight; p.Width = PageWidth; 
-    p.MarginLeft = PageMarginLeft; p.MarginRight = PageMarginRight;
-    p.MarginTop = PageMarginTop; p.MarginBottom = PageMarginBottom;
+    p.Page= Page;
     Pages.Add( p ); p.Number = Pages.Count; CP = p; 
     FirstLine = true; LinePos = 0; SpaceCount = 0; LineCharCount = 0;
     CurColumn = 0; LineMarginBefore = 0;
@@ -143,23 +142,23 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     CP.InitTxtFrom( old ); 
   }
 
-  void FinishLine( bool wrap ) // Writes the line buffer to a page.
+  private void FinishLine( bool wrap ) // Writes the line buffer to a page.
   {
     float space = LineLength - LinePos; if ( wrap && SpaceCount > 0 ) space += ( LinePos - SpacePos );
     float centerjustify = Justify == 1 ? space / 2 : 0; // Center justification
     int lineCharCount = LineCharCount;
 
     // GetSpace if needed.
-    if ( !FirstLine && CP.Y - LineAdvance < CP.MarginBottom ) NewColumn();
+    if ( !FirstLine && CP.Y - LineAdvance < CP.Page.MarginBottom ) NewColumn();
 
     if ( FirstLine ) 
     { 
-      CP.Goto( centerjustify + CP.MarginLeft + LineMarginBefore, CP.Height - CP.MarginTop - LineAdvance ); 
+      CP.Goto( centerjustify + CP.Page.MarginLeft + LineMarginBefore, CP.Page.Height - CP.Page.MarginTop - LineAdvance ); 
       FirstLine = false; 
     }
     else 
     {
-      CP.Td( centerjustify + CP.MarginLeft + LineMarginBefore - CP.X, -LineAdvance );
+      CP.Td( centerjustify + CP.Page.MarginLeft + LineMarginBefore - CP.X, -LineAdvance );
     }
     CP.SetCharSpacing( wrap && Justify == 2 ? space / lineCharCount : 0 );
     Line.Flush( CP );
@@ -177,22 +176,22 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   }
 
   // Word and Line state, used to calculate line justification and word wrapping.
-  float LinePos, SpacePos, ColSpace;
-  int SpaceCount, WordCharCount, LineCharCount, Columns = 1, CurColumn = 0;
-  bool FirstLine;
+  private float LinePos, SpacePos, ColSpace;
+  private int SpaceCount, WordCharCount, LineCharCount, Columns = 1, CurColumn = 0;
+  private bool FirstLine;
 
   // Streams, Lists and Buffers
-  IO.Stream OS; // Final output stream.
-  long OS_Total = 0; // Total bytes written to OS ( for xref table ) 
+  private IO.Stream OS; // Final output stream.
+  private long OS_Total = 0; // Total bytes written to OS ( for xref table ) 
   protected Generic.List<PdfPage> Pages = new Generic.List<PdfPage>();
-  Generic.List<DynObj> DynObjs = new Generic.List<DynObj>();
-  Generic.List<long> Xref = new Generic.List<long>();
-  WordBuffer Word = new WordBuffer();
-  LineBuffer Line = new LineBuffer();
+  private Generic.List<DynObj> DynObjs = new Generic.List<DynObj>();
+  private Generic.List<long> Xref = new Generic.List<long>();
+  private WordBuffer Word = new WordBuffer();
+  private LineBuffer Line = new LineBuffer();
 
-  void FlushWord() { Word.Flush( Line ); LineCharCount += WordCharCount; WordCharCount = 0; } 
+  private void FlushWord() { Word.Flush( Line ); LineCharCount += WordCharCount; WordCharCount = 0; } 
 
-  void WordAdd( String s, int start, int end ) // Append part of s to word buffer.
+  private void WordAdd( String s, int start, int end ) // Append part of s to word buffer.
   { if ( start >= end ) return; Word.Str( s, start, end ); } 
 
   public void Txt( String s,int start, int end ) // Writes text word-wrapping to new line or page as required.
@@ -232,14 +231,18 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     WordAdd( s,start,end );
   }
 
-  int PutInfo()
+  private int PutInfo()
   {
-    int result = StartObj();
-    Put( "<</Title" );
-    PutStr( Title );
-    Put ( ">>" );
-    EndObj();
-    return result;
+    if ( Title != "" )
+    {
+      int result = StartObj();
+      Put( "<</Title" );
+      PutStr( Title );
+      Put ( ">>" );
+      EndObj();
+      return result;
+    }
+    return 0;
   }
 
   // Low level functions for PDF creation.
@@ -260,7 +263,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
       Put( b );
   }
 
-  static bool IsAscii( String s )
+  public static bool IsAscii( String s )
   {
     for ( int i = 0; i < s.Length; i += 1 ) if ( s[i] > 127 ) return false;
     return true;
@@ -346,39 +349,39 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     #endif
   }
 
-} // End class PdfWriter
+  // WordBuffer and LineBuffer are used to implement text justification / line wrapping.
 
-// WordBuffer and LineBuffer are used to implement text justification / line wrapping.
+  private struct TextElem { public int Kind; public System.Object X; public int I1, I2; }
 
-struct TextElem { public int Kind; public System.Object X; public int I1, I2; }
-
-class WordBuffer : Generic.List<TextElem>
-{
-  public void Str( String x, int i1, int i2 ) { this.Add( new TextElem{ Kind=0, X = x, I1 = i1, I2 = i2 } ); }
-  public void Font( PdfFont x, int i1 ) {  this.Add( new TextElem{ Kind=1, X = x, I1 = i1 } ); }
-  public void Super( int i1 ) { this.Add( new TextElem{ Kind=2, I1 = i1 } ); }
-  public void Color( String x ) { this.Add( new TextElem{ Kind=3, X = x } ); }
-  public void Other( String x ) { this.Add( new TextElem{ Kind=4, X = x } ); }
-  public void Flush( LineBuffer b ) { foreach ( TextElem e in this ) b.Add( e ); Clear(); }
-}
-
-class LineBuffer : Generic.List<TextElem>
-{
-  public void Flush( PdfPage p ) 
+  private class WordBuffer : Generic.List<TextElem>
   {
-    foreach ( TextElem e in this ) 
-    {
-      switch ( e.Kind ) 
-      {
-        case 0: p.Txt( ( String ) e.X, e.I1, e.I2 ); break;
-        case 1: p.SetFont( ( PdfFont ) e.X, e.I1 ); break;
-        case 2: p.SetSuper( e.I1 ); break;
-        case 3: p.SetColor( ( String ) e.X ); break;
-        case 4: p.SetOther( ( String ) e.X ); break;
-      }
-    }
-    Clear();
+    public void Str( String x, int i1, int i2 ) { this.Add( new TextElem{ Kind=0, X = x, I1 = i1, I2 = i2 } ); }
+    public void Font( PdfFont x, int i1 ) {  this.Add( new TextElem{ Kind=1, X = x, I1 = i1 } ); }
+    public void Super( int i1 ) { this.Add( new TextElem{ Kind=2, I1 = i1 } ); }
+    public void Color( String x ) { this.Add( new TextElem{ Kind=3, X = x } ); }
+    public void Other( String x ) { this.Add( new TextElem{ Kind=4, X = x } ); }
+    public void Flush( LineBuffer b ) { foreach ( TextElem e in this ) b.Add( e ); Clear(); }
   }
-}
+
+  private class LineBuffer : Generic.List<TextElem>
+  {
+    public void Flush( PdfPage p ) 
+    {
+      foreach ( TextElem e in this ) 
+      {
+        switch ( e.Kind ) 
+        {
+          case 0: p.Txt( ( String ) e.X, e.I1, e.I2 ); break;
+          case 1: p.SetFont( ( PdfFont ) e.X, e.I1 ); break;
+          case 2: p.SetSuper( e.I1 ); break;
+          case 3: p.SetColor( ( String ) e.X ); break;
+          case 4: p.SetOther( ( String ) e.X ); break;
+        }
+      }
+      Clear();
+    }
+  }
+
+} // End class PdfWriter
 
 } // namespace
