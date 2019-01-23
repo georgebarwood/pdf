@@ -92,6 +92,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   public PdfFont Font{ get{ return _Font; } }
   public int FontSize{ get{ return _FontSize; } }
   public int Super{ get{ return _Super; } }
+  public bool PartialLine{ get{ return WordCharCount > 0 || LineCharCount > 0; } }
 
   // Public fields.
 
@@ -150,7 +151,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     }
   }
 
-  private void NewPage0() // Start a new page ( without flushing word buffer, so current word can be carried over to next page ).
+  public void NewPage0() // Start a new page ( without flushing word buffer, so current word can be carried over to next page ).
   { 
     PdfPage old = CP, p = new PdfPage();
     p.Layout = PageLayout;
@@ -248,7 +249,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   public virtual void Finish() 
   {
-    NewLine();
+    if ( PartialLine ) NewLine();
     int catObj = WriteCatalog( WritePages() );
     int infoObj = WriteInfo();
     foreach( DynObj x in DynObjs ) x.WriteTo( this );
