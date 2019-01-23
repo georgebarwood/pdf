@@ -103,8 +103,8 @@ class PdfWriter2 : PdfWriter
           {
             int Save = 0; PdfFont SaveF = null;
             if ( tag == "p" ) { Paracount+=1; if ( Paracount > 1 ){ NewLine(); NewLine();} }
-            else if ( tag == "b" ) { SaveF = CurFont; PdfFont nf = (SaveF==Fonts[2]) ? Fonts[3] : Fonts[1]; SetFont( nf, FontSize ); }
-            else if ( tag == "i" ) { SaveF = CurFont; PdfFont nf = (SaveF==Fonts[1]) ? Fonts[3] : Fonts[2]; SetFont( nf, FontSize );  }
+            else if ( tag == "b" ) { SaveF = Font; PdfFont nf = (SaveF==Fonts[2]) ? Fonts[3] : Fonts[1]; SetFont( nf, FontSize ); }
+            else if ( tag == "i" ) { SaveF = Font; PdfFont nf = (SaveF==Fonts[1]) ? Fonts[3] : Fonts[2]; SetFont( nf, FontSize );  }
             else if ( tag == "sup" ) { Save = Super; SetSuper(FontSize/2); }
             else if ( tag == "sub" ) { Save = Super; SetSuper(-FontSize/2); }
             i = Html( s, i, tag );
