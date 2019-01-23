@@ -11,10 +11,21 @@ public class PdfImage
   public PdfImage( int w, int h, int o ) { Width = w; Height = h; Obj = o; }
 }
 
+public struct PageLayout
+{
+  public float Width, Height, MarginLeft, MarginRight, MarginTop, MarginBottom;
+  public PageLayout( int width, int height, int margin )
+  {
+    Width = width; Height = height; 
+    MarginLeft = margin; MarginRight = margin; MarginTop = margin; MarginBottom = margin;
+  }
+}
+
 public class PdfPage
 {
+  public PageLayout Page;
+  public float X, Y; // Current text writing position ( useful when mixing graphics and text ).
   public int Number;
-  public float Width, Height, MarginTop, MarginLeft, MarginRight, MarginBottom, X, Y;
 
   // Graphics operations
 
@@ -216,7 +227,7 @@ public class PdfPage
       int pageobj = w.StartObj();
       kids.Append( pageobj + " 0 R " );
       w.Put("<</Type/Page/Parent " + pagesobj
-          + " 0 R/MediaBox[0 0 " + p.Width + " " + p.Height + "]/Contents " + contentobj
+          + " 0 R/MediaBox[0 0 " + p.Page.Width + " " + p.Page.Height + "]/Contents " + contentobj
           + " 0 R/Resources <<");
       PutResourceSet( w, p.Fonts, "/Font", "/F" );
       PutResourceSet( w, p.Xobjs, "/XObject", "/X" );
