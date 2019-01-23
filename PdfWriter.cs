@@ -12,8 +12,9 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     using( IO.FileStream fs = IO.File.Create( "Example1.pdf") )
     {
       PdfWriter w = new Pdf.PdfWriter(); 
+      w.Title = "Hello World";
       w.Fonts = Pdf.StandardFontFamily.Times(); // Sets font family.
-      w.Init( fs, "Hello World" ); // Sets output stream and document title.
+      w.Init( fs );
 
       // Optional style settings.
       w.Justify = 2; // Causes text to be justified.
@@ -34,9 +35,11 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     using( IO.FileStream fs = IO.File.Create( "Example2.pdf") )
     {
       PdfWriter w = new Pdf.PdfWriter(); 
-      w.Init( fs, "Hello World." );
+      w.Title = "Graphics and embedded font example";
+      w.Init( fs );
 
       PdfImage myImage = ImageUtil.Add( w, myImageBytes ); 
+
       w.LineAdvance = myImage.Height / 2 + 10; // Make space for the image
       w.NewLine();
       w.LineAdvance = 15; // Restore LineAdvance to default value.
@@ -54,8 +57,8 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   // Required additional files: PdfPage.cs, Deflator.cs, PdfFont.cs, PdfMetric.cs.
   // Optional additional files: PdfTrueType.cs, TrueType.cs, PdfPng.cs, Inflator.cs, PDfOther.cs, Util.cs, Pdfwriter2.cs.
 
-  public void Init( IO.Stream os, String title ) { OS = os; Title = title; Put( "%PDF-1.4\n" ); GetReadyToWrite(); }
-  public String Title = "Untitled"; // Assign a string to set the PDF title.
+  public void Init( IO.Stream os ) { OS = os; Put( "%PDF-1.4\n" ); GetReadyToWrite(); }
+  public String Title; // Assign a string to set the PDF title.
   public void Txt( String s ) {  Txt( s,0,s.Length ); } // Write justified text, word-wrapping to new line or page as required.
   public void NewLine() { FlushWord(); FinishLine( false ); } // Force a new line.
   public void NewPage() { NewLine(); NewPage0(); } // Force a new page.
@@ -233,7 +236,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   private int PutInfo()
   {
-    if ( Title != "" )
+    if ( Title != null )
     {
       int result = StartObj();
       Put( "<</Title" );
