@@ -23,7 +23,7 @@ public struct PageLayout
 
 public class PdfPage
 {
-  public PageLayout Page;
+  public PageLayout Layout;
   public float X, Y; // Current text writing position ( useful when mixing graphics and text ).
   public int Number;
 
@@ -227,7 +227,7 @@ public class PdfPage
       int pageobj = w.StartObj();
       kids.Append( pageobj + " 0 R " );
       w.Put("<</Type/Page/Parent " + pagesobj
-          + " 0 R/MediaBox[0 0 " + p.Page.Width + " " + p.Page.Height + "]/Contents " + contentobj
+          + " 0 R/MediaBox[0 0 " + p.Layout.Width + " " + p.Layout.Height + "]/Contents " + contentobj
           + " 0 R/Resources <<");
       PutResourceSet( w, p.Fonts, "/Font", "/F" );
       PutResourceSet( w, p.Xobjs, "/XObject", "/X" );
