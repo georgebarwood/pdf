@@ -1,4 +1,4 @@
-﻿using Math = System.Math; using Exception = System.Exception;
+using Math = System.Math; using Exception = System.Exception;
 using Stream = System.IO.Stream; using MemoryStream = System.IO.MemoryStream;
 
 namespace Pdf.Png { 
@@ -580,22 +580,25 @@ public class Reader // Class for reading a Png (portable network graphics) file 
   static void SubFilter( byte[] curr, int count, int bpp )
   {
     for ( int i = bpp; i < count; i += 1 )
-      curr[ i ] = ( byte )( curr[ i ] + curr[ i - bpp ] );
+      curr[ i ] = unchecked( ( byte )( curr[ i ] + curr[ i - bpp ] ) );
   }
 
   static void UpFilter( byte[] curr, byte[] prev, int count )
   {
     for ( int i = 0; i < count; i += 1 )
-      curr[ i ] = ( byte )( curr[ i ] + prev[ i ] );
+      curr[ i ] = unchecked( ( byte )( curr[ i ] + prev[ i ] ) );
   }
 
   static void AverageFilter( byte[] curr, byte[] prev, int count, int bpp )
   {
-    for ( int i = 0; i < bpp; i  += 1 )
-      curr[ i ] = ( byte )( curr[ i ] + prev[ i ] / 2 );
+    unchecked
+    {
+      for ( int i = 0; i < bpp; i  += 1 )
+        curr[ i ] = ( byte )( curr[ i ] + prev[ i ] / 2 );
 
-    for ( int i = bpp; i < count; i  += 1 )
-      curr[ i ] = ( byte )( curr[ i ] + ( curr[ i - bpp ] + prev[ i ] ) / 2 );
+      for ( int i = bpp; i < count; i  += 1 )
+        curr[ i ] = ( byte )( curr[ i ] + ( curr[ i - bpp ] + prev[ i ] ) / 2 );
+    }
   }
 
   static int PaethPredictor( int a, int b, int c )
@@ -612,11 +615,14 @@ public class Reader // Class for reading a Png (portable network graphics) file 
 
   static void PaethFilter( byte[] curr, byte[] prev, int count, int bpp )
   {
-    for ( int i = 0; i < bpp; i += 1 )
-      curr[ i ] = ( byte )( curr[ i ] + prev[ i ] );
+    unchecked 
+    {
+      for ( int i = 0; i < bpp; i += 1 )
+        curr[ i ] = ( byte )( curr[ i ] + prev[ i ] );
 
-    for ( int i = bpp; i < count; i += 1 )
-      curr[ i ] = ( byte )( curr[ i ] + PaethPredictor( curr[ i - bpp ], prev[ i ], prev[ i - bpp ] ) );
+      for ( int i = bpp; i < count; i += 1 )
+        curr[ i ] = ( byte )( curr[ i ] + PaethPredictor( curr[ i - bpp ], prev[ i ], prev[ i - bpp ] ) );
+    }
   }
 
   static int GetInt( Stream isp )
