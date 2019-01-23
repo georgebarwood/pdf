@@ -14,7 +14,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
       PdfWriter w = new Pdf.PdfWriter(); 
       w.Title = "Hello World";
       w.Fonts = Pdf.StandardFontFamily.Times(); // Sets font family.
-      w.Init( fs );
+      w.Initialise( fs );
 
       // Optional style settings.
       w.Justify = 2; // Causes text to be justified.
@@ -36,7 +36,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     {
       PdfWriter w = new Pdf.PdfWriter(); 
       w.Title = "Graphics and embedded font example";
-      w.Init( fs );
+      w.Initialise( fs );
 
       PdfImage myImage = ImageUtil.Add( w, myImageBytes ); 
 
@@ -57,7 +57,17 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   // Required additional files: PdfPage.cs, Deflator.cs, PdfFont.cs, PdfMetric.cs.
   // Optional additional files: PdfTrueType.cs, TrueType.cs, PdfPng.cs, Inflator.cs, PDfOther.cs, Util.cs, Pdfwriter2.cs.
 
-  public void Init( IO.Stream os ) { OS = os; Put( "%PDF-1.4\n" ); GetReadyToWrite(); }
+  public void Initialise( IO.Stream os ) 
+  { 
+    OS = os; 
+    Put( "%PDF-1.4\n" ); 
+    if ( CP == null ) 
+    {
+      if ( Fonts == null ) Fonts = StandardFontFamily.Helvetica();
+      if ( CurFont == null ) SetFont( Fonts[0], FontSize );
+      NewPage0();  
+    }   
+  }
   public String Title; // Assign a string to set the PDF title.
   public void Txt( String s ) {  Txt( s,0,s.Length ); } // Write justified text, word-wrapping to new line or page as required.
   public void NewLine() { FlushWord(); FinishLine( false ); } // Force a new line.
@@ -82,15 +92,10 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   public bool Compress = true; // Set to false to make PDF easier to examine when testing or if compression not wanted.
 
   // Functions to adjust text style.
-  public void SetFont( PdfFont f, int fs ) { f.GetObj( this );  Word.Font( f, fs ); CurFont = f; FontSize = fs; }
+  public void SetFont( PdfFont f, int fontSize ) { f.GetObj( this );  Word.Font( f, fontSize ); CurFont = f; FontSize = fontSize; }
   public void SetSuper( int x ) { Word.Super( x ); Super = x; }
   public void SetColor( String color ) { Word.Color( color ); }
   public void SetOther( String other ) { Word.Other( other ); }
-
-  // Page and Newline functions.
-  // The word buffer ( Word ) is flushed when word wrap occurs or a space is found.
-  // The word buffer can represent multiple text style changes within the word.
-  // The line buffer ( Line ) is written ( after justification ) to the current page when FinishLine is called.
 
   public virtual void StartPage() {} // Can be over-ridden to initialise the page ( e.g. set a background image, draw a border ) .
   public virtual void FinishPage() {} // Can be over-ridden to finalise the page ( e.g. write a page number ) .
@@ -136,8 +141,8 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   private void NewPage0() // Start a new page ( without flushing word buffer, so current word can be carried over to next page ).
   { 
-    PdfPage old=CP, p = new PdfPage();
-    p.Page= Page;
+    PdfPage old = CP, p = new PdfPage();
+    p.Page = Page;
     Pages.Add( p ); p.Number = Pages.Count; CP = p; 
     FirstLine = true; LinePos = 0; SpaceCount = 0; LineCharCount = 0;
     CurColumn = 0; LineMarginBefore = 0;
@@ -147,7 +152,8 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   private void FinishLine( bool wrap ) // Writes the line buffer to a page.
   {
-    float space = LineLength - LinePos; if ( wrap && SpaceCount > 0 ) space += ( LinePos - SpacePos );
+    float space = LineLength - LinePos; 
+    if ( wrap && SpaceCount > 0 ) space += ( LinePos - SpacePos );
     float centerjustify = Justify == 1 ? space / 2 : 0; // Center justification
     int lineCharCount = LineCharCount;
 
@@ -168,25 +174,15 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     LinePos = 0; SpaceCount = 0; LineCharCount = 0;
   }
 
-  public void GetReadyToWrite() // Sets defaults if not provided by user.
-  {  
-    if ( CP == null ) 
-    {
-      if ( Fonts == null ) Fonts = StandardFontFamily.Helvetica();
-      if ( CurFont == null ) SetFont( Fonts[0], FontSize );
-      NewPage0();  
-    }    
-  }
-
   // Word and Line state, used to calculate line justification and word wrapping.
   private float LinePos, SpacePos, ColSpace;
   private int SpaceCount, WordCharCount, LineCharCount, Columns = 1, CurColumn = 0;
   private bool FirstLine;
 
   // Streams, Lists and Buffers
-  private IO.Stream OS; // Final output stream.
-  private long OS_Total = 0; // Total bytes written to OS ( for xref table ) 
-  protected Generic.List<PdfPage> Pages = new Generic.List<PdfPage>();
+  public IO.Stream OS; // Final output stream.
+  public long OS_Total = 0; // Total bytes written to OS ( for xref table ) 
+  public Generic.List<PdfPage> Pages = new Generic.List<PdfPage>();
   private Generic.List<DynObj> DynObjs = new Generic.List<DynObj>();
   private Generic.List<long> Xref = new Generic.List<long>();
   private WordBuffer Word = new WordBuffer();
@@ -199,7 +195,6 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   public void Txt( String s,int start, int end ) // Writes text word-wrapping to new line or page as required.
   {
-    GetReadyToWrite();
     int i = start;
     while ( i < end ) 
     {
