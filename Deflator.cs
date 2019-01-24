@@ -89,7 +89,7 @@ sealed class Deflator
 
   // Intermediate circular buffer for storing LZ77 matches.
   private int    [] PositionBuffer;
-  private ushort [] LengthBuffer;
+  private ushort [] LengthBuffer;  // Could use byte [] by subtracting MinMatch before storing value ( range is 3..258 ).
   private ushort [] DistanceBuffer;
   private int BufferMask;
   private int BufferWrite, BufferRead; // Indexes for writing and reading.
@@ -772,7 +772,7 @@ struct Heap<T> // An array organised so the smallest element can be efficiently 
     return result;
   }
 
-} // end class Heap
+} // end struct Heap
 
 
 // ******************************************************************************
