@@ -1,3 +1,5 @@
+using System.Threading.Tasks;
+
 namespace Pdf {
 
 /* RFC 1951 compression ( https://www.ietf.org/rfc/rfc1951.txt ) aims to compress a stream of bytes using :
@@ -89,7 +91,7 @@ sealed class Deflator
 
   // Intermediate circular buffer for storing LZ77 matches.
   private int    [] PositionBuffer;
-  private ushort [] LengthBuffer;  // Could use byte [] by subtracting MinMatch before storing value ( range is 3..258 ).
+  private byte   [] LengthBuffer;
   private ushort [] DistanceBuffer;
   private int BufferMask;
   private int BufferWrite, BufferRead; // Indexes for writing and reading.
@@ -103,7 +105,7 @@ sealed class Deflator
     
     int bufferSize = CalcBufferSize( input.Length / 3, MaxBufferSize );
     PositionBuffer = new int[ bufferSize ];
-    LengthBuffer   = new ushort[ bufferSize ];
+    LengthBuffer   = new byte[ bufferSize ];
     DistanceBuffer = new ushort[ bufferSize ];   
     BufferMask = bufferSize - 1; 
   }
@@ -233,7 +235,7 @@ sealed class Deflator
     // System.Console.WriteLine( "SaveMatch at " + position + " length=" + length + " distance=" + distance );
     int i = BufferWrite;
     PositionBuffer[ i ] = position;
-    LengthBuffer[ i ] = (ushort) length;
+    LengthBuffer[ i ] = (byte) (length - MinMatch);
     DistanceBuffer[ i ] = (ushort) distance;
     i = ( i + 1 ) & BufferMask;
     if ( i == BufferRead ) OutputBlock( false );
@@ -258,7 +260,8 @@ sealed class Deflator
     // While block construction fails, reduce blockSize.
     while ( true )
     {
-      b = new Block( this, blockSize, null, out bits );
+      b = new Block( this, blockSize, null );
+      bits = b.GetBits();
       if ( bits >= 0 ) break;
       blockSize -= blockSize / 3;
     }     
@@ -267,14 +270,18 @@ sealed class Deflator
     while ( b.End < Buffered && DynamicBlockSize ) 
     {
       // b2 is a block which starts just after b.
-      int bits2; Block b2 = new Block( this, blockSize, b, out bits2 );
+      Block b2 = new Block( this, blockSize, b );
+      Block b3 = new Block( this, b2.End - b.Start, null );
+      
+      int bits2 = b2.GetBits();
       if ( bits2 < 0 ) break;
+      int bits3 = b3.GetBits();  
 
-      // b3 is the block which encodes b and b2 together.
-      int bits3; Block b3 = new Block( this, b2.End - b.Start, null, out bits3 );
-      if ( bits3 < 0 ) break;
+      // Version which computes bits2 and bits3 in parallel - unfortunately it seems to run slower not faster.
+      // Task<int> t2 = Task<int>.Factory.StartNew( () => { return b2.GetBits(); } );
+      // int bits3 = b3.GetBits(), bits2 = t2.Result;  
 
-      if ( bits3 > bits + bits2 ) break;
+      if ( bits2 < 0 || bits3 < 0 || bits3 > bits + bits2 ) break;
 
       bits = bits3;
       b = b3;
@@ -302,12 +309,11 @@ sealed class Deflator
   {
     public readonly int Start, End; // Range of input encoded.
 
-    public Block( Deflator d, int blockSize, Block previous, out int bits )
+    public Block( Deflator d, int blockSize, Block previous )
     // The block is not immediately output, to allow caller to try different block sizes.
     // Instead, the number of bits neeed to encoded the block is returned ( excluding "extra" bits ).
     {
       Output = d.Output;
-      bits = -1;
 
       if ( previous == null )
       {
@@ -325,19 +331,23 @@ sealed class Deflator
 
       End = TallyFrequencies( d, blockSize );
       Lit.Used[ 256 ] += 1; // End of block code.
+    }
+
+    public int GetBits()
+    {
      
-      if ( Lit.ComputeCodes() || Dist.ComputeCodes() ) return;
+      if ( Lit.ComputeCodes() || Dist.ComputeCodes() ) return -1;
 
       if ( Dist.Count == 0 ) Dist.Count = 1;
 
       // Compute length encoding.
       DoLengthPass( 1 );
-      if ( Len.ComputeCodes() ) return;
+      if ( Len.ComputeCodes() ) return -1;
 
       // The length codes are permuted before being stored ( so that # of trailing zeroes is likely to be more ).
       Len.Count = 19; while ( Len.Count > 4 && Len.Bits[ ClenAlphabet[ Len.Count - 1 ] ] == 0 ) Len.Count -= 1;
 
-      bits = 17 + 3 * Len.Count + Len.Total() + Lit.Total() + Dist.Total();
+      return 17 + 3 * Len.Count + Len.Total() + Lit.Total() + Dist.Total();
     }
 
     public void WriteBlock( Deflator d, bool last )
@@ -390,7 +400,7 @@ sealed class Deflator
         int matchPosition = d.PositionBuffer[ bufferRead ];
         if ( matchPosition >= end ) break;
 
-        int length = d.LengthBuffer[ bufferRead ];
+        int length = d.LengthBuffer[ bufferRead ] + MinMatch;
         int distance = d.DistanceBuffer[ bufferRead ];
         bufferRead = ( bufferRead + 1 ) & d.BufferMask;
 
@@ -435,7 +445,7 @@ sealed class Deflator
 
         if ( matchPosition >= End ) break;
 
-        int length = d.LengthBuffer[ bufferRead ];
+        int length = d.LengthBuffer[ bufferRead ] + MinMatch;
         int distance = d.DistanceBuffer[ bufferRead  ]; 
 
         bufferRead = ( bufferRead  + 1 ) & d.BufferMask;
