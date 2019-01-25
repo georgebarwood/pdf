@@ -28,7 +28,7 @@ namespace Pdf {
    on large inputs ( perhaps due to searches not being truncated ).
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output is 148,324 bytes
-   in 44 milliseconds, whereas Deflator output is 144,289 bytes, 4,035 bytes smaller, in 59 milliseconds.
+   in 44 milliseconds, whereas Deflator output is 143978 bytes, 4,035 bytes smaller, in 51 milliseconds.
 
    Compressing a C# source file of 19,483 bytes, Zlib output size was 5,965 bytes in 27 milliseconds, 
    whereas Deflator output was 5,890 bytes, 75 bytes smaller, in 16 milliseconds.
@@ -335,7 +335,6 @@ sealed class Deflator
 
     public int GetBits()
     {
-     
       if ( Lit.ComputeCodes() || Dist.ComputeCodes() ) return -1;
 
       if ( Dist.Count == 0 ) Dist.Count = 1;
@@ -596,7 +595,6 @@ struct HuffmanCoding // Variable length coding.
 
   private int Limit; // Maximum number of bits for a code.
   private ushort [] Tree;
-  private byte [] Depth;
 
   public HuffmanCoding( int limit, ushort symbols )
   {
@@ -605,7 +603,6 @@ struct HuffmanCoding // Variable length coding.
     Bits = new byte[ symbols ];
     Codes = new ushort[ symbols ];
     Used = new int[ symbols * 2 ]; // Second half of array is for tree nodes.
-    Depth = new byte[ symbols * 2 ]; // Second half of array is for tree nodes.
     Tree = new ushort[ symbols * 2] ; // First half is one branch, second half is other branch.
   }
 
@@ -621,39 +618,53 @@ struct HuffmanCoding // Variable length coding.
   {
     ushort count = Count;
 
-    Heap<ushort> heap = new Heap<ushort>( count, TreeNodeLessThan );
+    UlongHeap heap = new UlongHeap( count );
 
     for ( ushort i = 0; i < Count; i += 1 )
     {
       int used = Used[ i ];
-      if ( used > 0 ) heap.Insert( i );
+      if ( used > 0 )
+      {
+        // The values are encoded as 16 bits for the symbol, 8 bits for the depth, then 32 bits for the frequency.
+        heap.Insert( ( (ulong)used << 24 ) + i );
+      }
     }
 
     int maxBits = 0;
 
     if ( heap.Count == 1 )
     { 
-      GetBits( heap.Remove(), 1 );
+      GetBits( unchecked( (ushort) heap.Remove() ), 1 );
       maxBits = 1;
     }
     else if ( heap.Count > 1 )
     {
-      ushort treeNode = Count;
-      do // Keep pairing the lowest frequency TreeNodes.
+      ulong treeNode = Count;
+
+      do unchecked // Keep pairing the lowest frequency TreeNodes.
       {
-        ushort left = heap.Remove(); Tree[ treeNode - Count ] = left;
-        ushort right = heap.Remove(); Tree[ treeNode ] = right;
-        Used[ treeNode ] = Used[ left ] + Used[ right ];
-        int d1 = Depth[ left ], d2 = Depth[ right ]; 
-        Depth [ treeNode ] = (byte)( ( d1 > d2 ? d1 : d2 ) + 1 );
-        heap.Insert( treeNode );
+        ulong left = heap.Remove(); 
+        Tree[ treeNode - Count ] = (ushort) left;
+
+        ulong right = heap.Remove(); 
+        Tree[ treeNode ] = (ushort) right;
+
+        // Extract depth of left and right nodes ( depth is encoded as bits 16..23 ).
+        uint dleft = (uint)left & 0xff0000u, dright = (uint)right & 0xff0000u; 
+        uint depth = ( dleft > dright ? dleft : dright ) + 0x10000u;
+
+        heap.Insert( ( ( left + right ) & 0xffffffffff000000 ) | depth | treeNode );
+
         treeNode += 1;
       }  while ( heap.Count > 1 );
-
-      int root = heap.Remove();
-      maxBits = Depth[ root ];
-      if ( maxBits > Limit ) return true;
-      GetBits( root, 0 ); // Walk the tree to find the code lengths (Bits).
+      
+      unchecked
+      {
+        uint root = ( (uint) heap.Remove() ) & 0xffffff;
+        maxBits = (int)( root >> 16 );
+        if ( maxBits > Limit ) return true;
+        GetBits( (ushort)root, 0 ); // Walk the tree to find the code lengths (Bits).
+      }
     }
 
     // Compute codes, code below is from RFC 1951 page 7.
@@ -684,19 +695,13 @@ struct HuffmanCoding // Variable length coding.
     Count = count;
 
     // System.Console.WriteLine( "HuffEncoder.ComputeCodes" );
-    //    for ( int i = 0; i < count; i += 1 ) if ( Bits[ i ] > 0 )
+    //     for ( int i = 0; i < count; i += 1 ) if ( Bits[ i ] > 0 )
     //      System.Console.WriteLine( "i=" + i + " len=" + Bits[ i ] + " tc=" + Codes[ i ].ToString("X") + " freq=" + Used[ i ] );
 
     return false;
   }
 
-  private bool TreeNodeLessThan( ushort treeNode1, ushort treeNode2 )
-  {
-    int ud = Used[ treeNode1 ] - Used[ treeNode2 ];
-    return ud < 0 || ud == 0 && Depth[ treeNode1 ] < Depth[ treeNode2 ];
-  }
-
-  private void GetBits( int treeNode, int length )
+  private void GetBits( ushort treeNode, int length )
   {
     if ( treeNode < Count ) // treeNode is a leaf.
     {
@@ -729,60 +734,55 @@ struct HuffmanCoding // Variable length coding.
 // ******************************************************************************
 
 
-struct Heap<T> // An array organised so the smallest element can be efficiently removed.
+struct UlongHeap // An array organised so the smallest element can be efficiently removed.
 {
-  public delegate bool DLessThan( T a, T b );
-
   public int Count { get{ return _Count; } }
   private int _Count;
-  private T [] Array;
-  private DLessThan LessThan;
+  private ulong [] Array;
 
-  public Heap ( int capacity, DLessThan lessThan )
+  public UlongHeap ( int capacity )
   {
     _Count = 0;
-    Array = new T[ capacity ];
-    LessThan = lessThan;
+    Array = new ulong[ capacity ];
   }
   
-  public void Insert( T e )
+  public void Insert( ulong e )
   {
     int j = _Count++;
     while ( j > 0 )
     {
       int p = ( j - 1 ) >> 1; // Index of parent.
-      T pe = Array[ p ];
-      if ( !LessThan( e, pe ) ) break;
+      ulong pe = Array[ p ];
+      if ( e >= pe ) break;
       Array[ j ] = pe; // Demote parent.
       j = p;
     }    
     Array[ j ] = e;
   }
 
-  public T Remove() // Returns the smallest element.
+  public ulong Remove() // Returns the smallest element.
   {
-    T result = Array[ 0 ];
+    ulong result = Array[ 0 ];
     _Count -= 1;
-    T e = Array[ _Count ];
-    Array[ _Count ] = default(T);
+    ulong e = Array[ _Count ];
     int j = 0;
     while ( true )
     {
       int c = ( j + j ) + 1; if ( c >= _Count ) break;
-      T ce = Array[ c ];
+      ulong ce = Array[ c ];
       if ( c + 1 < _Count )
       {
-        T ce2 = Array[ c + 1 ];
-        if ( LessThan( ce2, ce ) ) { c += 1; ce = ce2; }
+        ulong ce2 = Array[ c + 1 ];
+        if ( ce2 < ce ) { c += 1; ce = ce2; }
       } 
-      if ( !LessThan( ce, e ) ) break;
+      if ( ce >= e ) break;
       Array[ j ] = ce; j = c;  
     }
     Array[ j ] = e;
     return result;
   }
 
-} // end struct Heap
+} // end struct UlongHeap
 
 
 // ******************************************************************************
