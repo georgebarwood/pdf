@@ -29,10 +29,12 @@ namespace Pdf {
    on large inputs ( perhaps due to searches not being truncated ).
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output is 148,324 bytes
-   in 44 milliseconds, whereas Deflator output is 143978 bytes, 4,035 bytes smaller, in 51 milliseconds.
+   in 44 milliseconds, whereas Deflator output is 143,956 bytes, 4,368 bytes smaller, in 50 milliseconds.
 
-   Compressing a C# source file of 19,483 bytes, Zlib output size was 5,965 bytes in 27 milliseconds, 
-   whereas Deflator output was 5,890 bytes, 75 bytes smaller, in 16 milliseconds.
+   Compressing a C# source file of 19,483 bytes, Zlib output size is 5,965 bytes in 27 milliseconds, 
+   whereas Deflator output is 5,890 bytes, 75 bytes smaller, in 16 milliseconds.
+
+
 
    Sample usage:
 
