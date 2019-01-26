@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace Pdf {
 
@@ -274,14 +275,13 @@ sealed class Deflator
       Block b3 = new Block( this, b2.End - b.Start, null );
       
       int bits2 = b2.GetBits();
-      if ( bits2 < 0 ) break;
       int bits3 = b3.GetBits();  
 
       // Version which computes bits2 and bits3 in parallel - unfortunately it seems to run slower not faster.
       // Task<int> t2 = Task<int>.Factory.StartNew( () => { return b2.GetBits(); } );
       // int bits3 = b3.GetBits(), bits2 = t2.Result;  
 
-      if ( bits2 < 0 || bits3 < 0 || bits3 > bits + bits2 ) break;
+      if ( bits3 > bits + bits2 ) break;
 
       bits = bits3;
       b = b3;
@@ -335,13 +335,14 @@ sealed class Deflator
 
     public int GetBits()
     {
-      if ( Lit.ComputeCodes() || Dist.ComputeCodes() ) return -1;
+      Lit.ComputeCodes();
+      Dist.ComputeCodes();
 
       if ( Dist.Count == 0 ) Dist.Count = 1;
 
       // Compute length encoding.
       DoLengthPass( 1 );
-      if ( Len.ComputeCodes() ) return -1;
+      Len.ComputeCodes();
 
       // The length codes are permuted before being stored ( so that # of trailing zeroes is likely to be more ).
       Len.Count = 19; while ( Len.Count > 4 && Len.Bits[ ClenAlphabet[ Len.Count - 1 ] ] == 0 ) Len.Count -= 1;
@@ -589,12 +590,12 @@ sealed class Deflator
 struct HuffmanCoding // Variable length coding.
 {
   public ushort Count; // Number of used symbols.
-  public byte [] Bits; // Number of bits used to encode a symbol.
+  public byte [] Bits; // Number of bits used to encode a symbol ( code length ).
   public ushort [] Codes; // Huffman code for a symbol ( bit 0 is most significant ).
   public int [] Used; // Count of how many times a symbol is used in the block being encoded.
 
-  private int Limit; // Maximum number of bits for a code.
-  private ushort [] Tree;
+  private int Limit; // Limit on code length ( 15 or 7 for RFC 1951 ).
+  private ushort [] Left, Right; // Tree storage.
 
   public HuffmanCoding( int limit, ushort symbols )
   {
@@ -602,32 +603,36 @@ struct HuffmanCoding // Variable length coding.
     Count = symbols;
     Bits = new byte[ symbols ];
     Codes = new ushort[ symbols ];
-    Used = new int[ symbols * 2 ]; // Second half of array is for tree nodes.
-    Tree = new ushort[ symbols * 2] ; // First half is one branch, second half is other branch.
+    Used = new int[ symbols ];
+    Left = new ushort[ symbols ];
+    Right = new ushort[ symbols ];
   }
 
   public int Total()
   {
-    int result = 0, count = Count;
-    for ( int i = 0; i < count; i += 1 ) 
+    int result = 0;
+    for ( int i = 0; i < Count; i += 1 ) 
       result += Used[i] * Bits[i];
     return result;
   }
 
-  public bool ComputeCodes() // returns true if Limit is exceeded.
+  public void ComputeCodes()
   {
-    ushort count = Count;
+    // Tree nodes are encoded in a ulong using 16 bits for the id, 8 bits for the tree depth, 32 bits for Used.
+    const int IdBits = 16, DepthBits = 8, UsedBits = 32;
+    const uint IdMask = ( 1u << IdBits ) - 1;
+    const uint DepthOne = 1u << IdBits;
+    const uint DepthMask = ( ( 1u << DepthBits ) - 1 ) << IdBits;
+    const ulong UsedMask = ( ( 1ul << UsedBits ) - 1 ) << ( IdBits + DepthBits );
 
-    UlongHeap heap = new UlongHeap( count );
+    // First compute the number of bits to encode each symbol (Bits).
+    UlongHeap heap = new UlongHeap( Count );
 
     for ( ushort i = 0; i < Count; i += 1 )
     {
       int used = Used[ i ];
       if ( used > 0 )
-      {
-        // The values are encoded as 16 bits for the symbol, 8 bits for the depth, then 32 bits for the frequency.
-        heap.Insert( ( (ulong)used << 24 ) + i );
-      }
+        heap.Insert( ( (ulong)used << ( IdBits + DepthBits ) ) | i );
     }
 
     int maxBits = 0;
@@ -637,68 +642,72 @@ struct HuffmanCoding // Variable length coding.
       GetBits( unchecked( (ushort) heap.Remove() ), 1 );
       maxBits = 1;
     }
-    else if ( heap.Count > 1 )
+    else if ( heap.Count > 1 ) unchecked
     {
       ulong treeNode = Count;
 
-      do unchecked // Keep pairing the lowest frequency TreeNodes.
+      do // Keep pairing the lowest frequency TreeNodes.
       {
         ulong left = heap.Remove(); 
-        Tree[ treeNode - Count ] = (ushort) left;
+        Left[ treeNode - Count ] = (ushort) left;
 
         ulong right = heap.Remove(); 
-        Tree[ treeNode ] = (ushort) right;
+        Right[ treeNode - Count ] = (ushort) right;
 
-        // Extract depth of left and right nodes ( depth is encoded as bits 16..23 ).
-        uint dleft = (uint)left & 0xff0000u, dright = (uint)right & 0xff0000u; 
-        uint depth = ( dleft > dright ? dleft : dright ) + 0x10000u;
+        // Extract depth of left and right nodes ( still shifted though ).
+        uint depthLeft = (uint)left & DepthMask, depthRight = (uint)right & DepthMask; 
 
-        heap.Insert( ( ( left + right ) & 0xffffffffff000000 ) | depth | treeNode );
+        // New node depth is 1 + larger of depthLeft and depthRight.
+        uint depth = ( depthLeft > depthRight ? depthLeft : depthRight ) + DepthOne;
+
+        heap.Insert( ( ( left + right ) & UsedMask ) | depth | treeNode );
 
         treeNode += 1;
       }  while ( heap.Count > 1 );
       
-      unchecked
+      uint root = ( (uint) heap.Remove() ) & ( DepthMask | IdMask );
+      maxBits = (int)( root >> IdBits );
+      if ( maxBits <= Limit )
+        GetBits( (ushort)root, 0 );
+      else
       {
-        uint root = ( (uint) heap.Remove() ) & 0xffffff;
-        maxBits = (int)( root >> 16 );
-        if ( maxBits > Limit ) return true;
-        GetBits( (ushort)root, 0 ); // Walk the tree to find the code lengths (Bits).
+        maxBits = Limit;
+        PackageMerge();
       }
     }
 
-    // Compute codes, code below is from RFC 1951 page 7.
+    // Computation of code lengths (Bits) is complete.
+    // Now compute Codes, code below is from RFC 1951 page 7.
 
     int [] bl_count = new int[ maxBits + 1 ];
-    for ( int i = 0; i < count; i += 1 ) bl_count[ Bits[ i ] ] += 1;
+    for ( int i = 0; i < Count; i += 1 ) 
+      bl_count[ Bits[ i ] ] += 1; 
 
     int [] next_code = new int[ maxBits + 1 ];
     int code = 0; bl_count[ 0 ] = 0;
     for ( int i = 0; i < maxBits; i += 1 ) 
     {
       code = ( code + bl_count[ i ] ) << 1;
-      next_code[ i+1 ] = code;
+      next_code[ i + 1 ] = code;
     }
 
-    for ( int i = 0; i < count; i += 1 ) 
+    for ( int i = 0; i < Count; i += 1 ) 
     {
       int length = Bits[ i ];
       if ( length != 0 ) 
       {
-        Codes[ i ] = (ushort)Reverse( next_code[ length ], length );
+        Codes[ i ] = (ushort) Reverse( next_code[ length ], length );
         next_code[ length ] += 1;
       }
     }
 
-    // Reduce count if there are unused symbols.
-    while ( count > 0 && Bits[ count - 1 ] == 0 ) count -= 1;
-    Count = count;
+    // Reduce Count if there are unused symbols.
+    while ( Count > 0 && Bits[ Count - 1 ] == 0 ) Count -= 1;
 
-    // System.Console.WriteLine( "HuffEncoder.ComputeCodes" );
-    //     for ( int i = 0; i < count; i += 1 ) if ( Bits[ i ] > 0 )
-    //      System.Console.WriteLine( "i=" + i + " len=" + Bits[ i ] + " tc=" + Codes[ i ].ToString("X") + " freq=" + Used[ i ] );
+    // System.Console.WriteLine( "HuffmanCoding.ComputeCodes" );
+    //   for ( int i = 0; i < Count; i += 1 ) if ( Bits[ i ] > 0 )
+    //     System.Console.WriteLine( "symbol=" + i + " len=" + Bits[ i ] + " code=" + Codes[ i ].ToString("X") + " used=" + Used[ i ] );
 
-    return false;
   }
 
   private void GetBits( ushort treeNode, int length )
@@ -709,9 +718,10 @@ struct HuffmanCoding // Variable length coding.
     }
     else 
     {
+      treeNode -= Count;
       length += 1;
-      GetBits( Tree[ treeNode - Count ], length );
-      GetBits( Tree[ treeNode ], length );
+      GetBits( Left[ treeNode ], length );
+      GetBits( Right[ treeNode ], length );
     }
   }
 
@@ -727,6 +737,97 @@ struct HuffmanCoding // Variable length coding.
     } 
     return result; 
   } 
+
+  // PackageMerge is used if the Limit code length limit is reached.
+  // The result is technically not a Huffman code in this case ( due to the imposed limit ).
+  // See https://en.wikipedia.org/wiki/Package-merge_algorithm for a description of the algorithm.
+
+  private void PackageMerge()
+  {
+    // Tree nodes are encoded in a ulong using 16 bits for the id, 32 bits for Used.
+    const int IdBits = 16, UsedBits = 32;
+    const ulong UsedMask = ( ( 1ul << UsedBits ) - 1 ) << IdBits;
+
+    Left = new ushort[ Count * Limit ];
+    Right = new ushort[ Count * Limit ];
+
+    // Fisrt sort using Heapsort.
+    UlongHeap heap = new UlongHeap( Count );
+    for ( uint i = 0; i < Count; i += 1 ) 
+    {
+      if ( Used[ i ] != 0 ) 
+      {
+        heap.Insert( (ulong)Used[ i ] << IdBits | i );
+      }
+    }
+    int n = heap.Count; 
+    ulong [] sorted = new ulong[ n ];
+    for ( int i = 0; i < n; i += 1 ) sorted[ i ] = heap.Remove();
+
+    // List class is from System.Collections.Generic.
+    List<ulong> merged = new List<ulong>( Count ), 
+                next = new List<ulong>( Count );
+
+    uint package = (uint) Count; // Allocator for package ids.
+
+    for ( int i = 0; i < Limit; i += 1 ) 
+    {
+      int j = 0, k = 0; // Indexes into the lists being merged.
+      next.Clear();
+      for ( int total = ( sorted.Length + merged.Count ) / 2; total > 0; total -= 1 )  
+      {
+        ulong left, right; // The tree nodes to be packaged.
+
+        if ( k < merged.Count )
+        {
+          left = merged[ k ];
+          if ( j < sorted.Length )
+          {
+            ulong sj = sorted[ j ];
+            if ( left < sj ) k += 1;
+            else { left = sj; j += 1; }
+          }
+          else k += 1;
+        }
+        else left = sorted[ j++ ];
+
+        if ( k < merged.Count )
+        {
+          right = merged[ k ];
+          if ( j < sorted.Length )
+          {
+            ulong sj = sorted[ j ];
+            if ( right < sj ) k += 1;
+            else { right = sj; j += 1; }
+          }
+          else k += 1;
+        }
+        else right = sorted[ j++ ];
+
+        Left[ package ] = unchecked( (ushort) left );
+        Right[ package ] = unchecked( (ushort) right );
+        next.Add( ( left + right ) & UsedMask | package );        
+        package += 1;
+      }
+
+      // Swap merged and next.
+      List<ulong> tmp = merged; merged = next; next = tmp;
+    }
+
+    for ( int i = 0; i < merged.Count; i += 1 )
+      MergeGetBits( unchecked( (ushort) merged[i] ) );
+  }
+
+  private void MergeGetBits( ushort node )
+  {
+    if ( node < Count )
+      Bits[ node ] += 1;
+    else
+    {
+      MergeGetBits( Left[ node ] );
+      MergeGetBits( Right[ node ] );
+    }
+  }
 
 } // end struct HuffmanCoding
 
