@@ -49,7 +49,7 @@ namespace Pdf {
    *  OutBitStream.
    *  MemoryBitStream : an implementation of OutBitStream.
    *  HuffmanCoding calculates Huffman codes.
-   *  Heap : used to implemnt HuffmanCoding.
+   *  UlongHeap : used to implemnt HuffmanCoding.
 */   
 
 sealed class Deflator 
@@ -113,7 +113,7 @@ sealed class Deflator
     BufferMask = bufferSize - 1; 
   }
 
-  public static int CalcBufferSize( int n, int max )
+  private static int CalcBufferSize( int n, int max )
   // Calculates a power of 2 >= n, but not more than max.
   {
     if ( n >= max ) return max;
@@ -260,14 +260,8 @@ sealed class Deflator
     Block b;
     int bits; // Compressed size in bits.
 
-    // While block construction fails, reduce blockSize.
-    while ( true )
-    {
-      b = new Block( this, blockSize, null );
-      bits = b.GetBits();
-      if ( bits >= 0 ) break;
-      blockSize -= blockSize / 3;
-    }     
+    b = new Block( this, blockSize, null );
+    bits = b.GetBits();
 
     // Investigate larger block size.
     while ( b.End < Buffered && DynamicBlockSize ) 
@@ -313,7 +307,7 @@ sealed class Deflator
 
     public Block( Deflator d, int blockSize, Block previous )
     // The block is not immediately output, to allow caller to try different block sizes.
-    // Instead, the number of bits neeed to encoded the block is returned ( excluding "extra" bits ).
+    // Instead, the number of bits neeed to encoded the block is returned by GetBits ( excluding "extra" bits ).
     {
       Output = d.Output;
 
@@ -740,7 +734,7 @@ struct HuffmanCoding // Variable length coding.
     return result; 
   } 
 
-  // PackageMerge is used if the Limit code length limit is reached.
+  // PackageMerge is used if the Limit code length limit is exceeded.
   // The result is technically not a Huffman code in this case ( due to the imposed limit ).
   // See https://en.wikipedia.org/wiki/Package-merge_algorithm for a description of the algorithm.
 
@@ -753,7 +747,7 @@ struct HuffmanCoding // Variable length coding.
     Left = new ushort[ Count * Limit ];
     Right = new ushort[ Count * Limit ];
 
-    // Fisrt sort using Heapsort.
+    // First sort using Heapsort.
     UlongHeap heap = new UlongHeap( Count );
     for ( uint i = 0; i < Count; i += 1 ) 
     {
@@ -1041,6 +1035,6 @@ sealed class MemoryBitStream : OutBitStream
     public Chunk Next;
   }
 
-} // end class MemoryBitStream
+} // end class MemoryBitStreams
 
 } // namespace
