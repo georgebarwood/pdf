@@ -957,10 +957,8 @@ sealed class MemoryBitStream : OutBitStream
     for ( Chunk c = FirstChunk; c != null; c = c.Next )
     { 
       int n = ( c == CurrentChunk ) ? BytesInCurrentChunk : Chunk.Capacity;
-      // Three possible methods, not sure which is best.
-      for ( int j = 0; j < n; j += 1 ) buffer[i++] = c.Bytes[ j ];
-      // System.Buffer.BlockCopy( c.Bytes, 0, buffer, i, n ); i += n;
-      // System.Array.Copy( c.Bytes, 0, buffer, i, n ); i += n;
+      System.Array.Copy( c.Bytes, 0, buffer, i, n ); 
+      i += n;
     }
 
     int biw = BitsInWord;
@@ -1001,16 +999,7 @@ sealed class MemoryBitStream : OutBitStream
       bytes[ i++ ] = (byte) w; w >>= 8;
       bytes[ i++ ] = (byte) w; w >>= 8;
       bytes[ i++ ] = (byte) w; w >>= 8;
-      bytes[ i++ ] = (byte) w; // w >>= 8;
-/*
-      bytes[ i++ ] = (byte)( w >> 8 );
-      bytes[ i++ ] = (byte)( w >> 16 );
-      bytes[ i++ ] = (byte)( w >> 24 );
-      bytes[ i++ ] = (byte)( w >> 32 );
-      bytes[ i++ ] = (byte)( w >> 40 );
-      bytes[ i++ ] = (byte)( w >> 48 );
-      bytes[ i++ ] = (byte)( w >> 56 );
-*/
+      bytes[ i++ ] = (byte) w;
     }
     BytesInCurrentChunk = i;
   }
