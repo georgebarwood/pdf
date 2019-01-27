@@ -31,10 +31,11 @@ namespace Pdf {
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output is 148,324 bytes
    in 44 milliseconds, whereas Deflator output is 143,956 bytes, 4,368 bytes smaller, in 50 milliseconds.
 
+   Or, setting StartBlockSize to 0x800 instead of 0x1000, Deflator output is 143,675, 4,649 bytes smaller, 
+   in 55 milliconds.
+
    Compressing a C# source file of 19,483 bytes, Zlib output size is 5,965 bytes in 27 milliseconds, 
    whereas Deflator output is 5,890 bytes, 75 bytes smaller, in 16 milliseconds.
-
-
 
    Sample usage:
 
@@ -271,6 +272,8 @@ sealed class Deflator
       
       int bits2 = b2.GetBits();
       int bits3 = b3.GetBits(); 
+
+      // At this point could "tune" the size of b to minimise bits + bits2.
 
       if ( bits3 > bits + bits2 ) break;
 
