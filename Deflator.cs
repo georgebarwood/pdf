@@ -257,25 +257,20 @@ sealed class Deflator
       blockSize = ( last && blockSize < StartBlockSize*2 ) ? blockSize >> 1 : StartBlockSize;
     }
 
-    Block b;
-    int bits; // Compressed size in bits.
-
-    b = new Block( this, blockSize, null );
-    bits = b.GetBits();
+    Block b = new Block( this, blockSize, null );
+    int bits = b.GetBits(); // Compressed size in bits.
 
     // Investigate larger block size.
     while ( b.End < Buffered && DynamicBlockSize ) 
     {
       // b2 is a block which starts just after b.
       Block b2 = new Block( this, blockSize, b );
+
+      // b3 covers b and b2 exactly as one block.
       Block b3 = new Block( this, b2.End - b.Start, null );
       
       int bits2 = b2.GetBits();
-      int bits3 = b3.GetBits();  
-
-      // Version which computes bits2 and bits3 in parallel - unfortunately it seems to run slower not faster.
-      // Task<int> t2 = Task<int>.Factory.StartNew( () => { return b2.GetBits(); } );
-      // int bits3 = b3.GetBits(), bits2 = t2.Result;  
+      int bits3 = b3.GetBits(); 
 
       if ( bits3 > bits + bits2 ) break;
 
@@ -932,7 +927,7 @@ sealed class MemoryBitStream : OutBitStream
 
   public int ByteSize() 
   {
-    return ( CompleteChunks * Chunk.Capacity + WordsInCurrentChunk ) * WordSize + ( BitsInWord + 7 ) / 8;
+    return CompleteChunks * Chunk.Capacity + BytesInCurrentChunk + ( BitsInWord + 7 ) / 8;
   }
 
   public void CopyTo( System.IO.Stream s ) 
@@ -940,23 +935,8 @@ sealed class MemoryBitStream : OutBitStream
     byte [] buffer = new byte [ WordSize ];
     for ( Chunk c = FirstChunk; c != null; c = c.Next )
     { 
-      int n = ( c == CurrentChunk ) ? WordsInCurrentChunk : Chunk.Capacity;
-      for ( int j = 0; j < n; j += 1 ) 
-      {
-        ulong w = c.Words[ j ];
-        unchecked
-        {
-          buffer[0] = (byte) w;
-          buffer[1] = (byte)( w >> 8 );
-          buffer[2] = (byte)( w >> 16 );
-          buffer[3] = (byte)( w >> 24 );
-          buffer[4] = (byte)( w >> 32 );
-          buffer[5] = (byte)( w >> 40 );
-          buffer[6] = (byte)( w >> 48 );
-          buffer[7] = (byte)( w >> 56 );
-        }
-        s.Write( buffer, 0, 8 ); 
-      }
+      int n = ( c == CurrentChunk ) ? BytesInCurrentChunk : Chunk.Capacity;
+      s.Write( c.Bytes, 0, n ); 
     }
 
     int biw = BitsInWord;
@@ -976,22 +956,11 @@ sealed class MemoryBitStream : OutBitStream
 
     for ( Chunk c = FirstChunk; c != null; c = c.Next )
     { 
-      int n = ( c == CurrentChunk ) ? WordsInCurrentChunk : Chunk.Capacity;
-      for ( int j = 0; j < n; j += 1 ) 
-      {
-        ulong w = c.Words[ j ];
-        unchecked
-        {
-          buffer[i++] = (byte) w;
-          buffer[i++] = (byte)( w >> 8 );
-          buffer[i++] = (byte)( w >> 16 );
-          buffer[i++] = (byte)( w >> 24 );
-          buffer[i++] = (byte)( w >> 32 );
-          buffer[i++] = (byte)( w >> 40 );
-          buffer[i++] = (byte)( w >> 48 );
-          buffer[i++] = (byte)( w >> 56 );
-        }
-      }
+      int n = ( c == CurrentChunk ) ? BytesInCurrentChunk : Chunk.Capacity;
+      // Three possible methods, not sure which is best.
+      for ( int j = 0; j < n; j += 1 ) buffer[i++] = c.Bytes[ j ];
+      // System.Buffer.BlockCopy( c.Bytes, 0, buffer, i, n ); i += n;
+      // System.Array.Copy( c.Bytes, 0, buffer, i, n ); i += n;
     }
 
     int biw = BitsInWord;
@@ -1011,30 +980,52 @@ sealed class MemoryBitStream : OutBitStream
     CurrentChunk = FirstChunk;
   }
 
-  public override void Save( ulong word )
+  public override void Save( ulong w )
   {
-    if ( WordsInCurrentChunk == Chunk.Capacity )
+    if ( BytesInCurrentChunk == Chunk.Capacity )
     {
       Chunk nc = new Chunk();
       CurrentChunk.Next = nc;
       CurrentChunk = nc;
       CompleteChunks += 1;
-      WordsInCurrentChunk = 0;
+      BytesInCurrentChunk = 0;
     }
-    CurrentChunk.Words[ WordsInCurrentChunk++ ] = word;
+    int i = BytesInCurrentChunk;
+    byte [] bytes = CurrentChunk.Bytes;
+    unchecked
+    {
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; // w >>= 8;
+/*
+      bytes[ i++ ] = (byte)( w >> 8 );
+      bytes[ i++ ] = (byte)( w >> 16 );
+      bytes[ i++ ] = (byte)( w >> 24 );
+      bytes[ i++ ] = (byte)( w >> 32 );
+      bytes[ i++ ] = (byte)( w >> 40 );
+      bytes[ i++ ] = (byte)( w >> 48 );
+      bytes[ i++ ] = (byte)( w >> 56 );
+*/
+    }
+    BytesInCurrentChunk = i;
   }
 
-  private int WordsInCurrentChunk; // Number of words stored in CurrentChunk.
+  private int BytesInCurrentChunk; // Number of bytes stored in CurrentChunk.
   private int CompleteChunks; // Number of complete Chunks.
   private Chunk FirstChunk, CurrentChunk;
 
   private class Chunk
   {
-    public const int Capacity = 256;
-    public ulong [] Words = new ulong[ Capacity ];
+    public const int Capacity = 0x800;
+    public byte [] Bytes = new byte[ Capacity ]; // May be better to make thuis a byte array.
     public Chunk Next;
   }
 
-} // end class MemoryBitStreams
+} // end class MemoryBitStream
 
 } // namespace
