@@ -62,7 +62,7 @@ sealed class Deflator
     d.Go();
   }
 
-  // Options : to amend these use new Deflator() and set before calling Go().
+  // Options : to amend these use new Deflator( input, output ) and set before calling Go().
   public int StartBlockSize = 0x1000; // Increase to go faster ( with less compression ), reduce to try for more compression.
   public int MaxBufferSize = 0x8000; // Must be power of 2, increase to try for slightly more compression on large inputs.
   public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
@@ -72,6 +72,12 @@ sealed class Deflator
 
   public void Go()
   {
+    int bufferSize = CalcBufferSize( Input.Length / 3, MaxBufferSize );
+    PositionBuffer = new int[ bufferSize ];
+    LengthBuffer   = new byte[ bufferSize ];
+    DistanceBuffer = new ushort[ bufferSize ];   
+    BufferMask = bufferSize - 1; 
+
     if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
     if ( LZ77 ) FindMatches( Input );
     Buffered = Input.Length;
@@ -116,12 +122,6 @@ sealed class Deflator
   { 
     Input = input; 
     Output = output; 
-    
-    int bufferSize = CalcBufferSize( input.Length / 3, MaxBufferSize );
-    PositionBuffer = new int[ bufferSize ];
-    LengthBuffer   = new byte[ bufferSize ];
-    DistanceBuffer = new ushort[ bufferSize ];   
-    BufferMask = bufferSize - 1; 
   }
 
   private static int CalcBufferSize( int n, int max )
