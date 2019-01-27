@@ -108,7 +108,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   public FontFamily Fonts;
 
   // Line justification parameter.
-  public int Justify=0; // Justify values are 0=right ragged, 1=center, 2=justifed.
+  public int Justify = 0; // Justify values are 0=right ragged, 1=center, 2=justifed.
 
   // Streams, Lists and Buffers
   public IO.Stream OS; // Final output stream.
@@ -123,7 +123,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
   // Private fields.
 
   private PdfFont _Font; 
-  private int _FontSize=12, _Super;
+  private int _FontSize = 12, _Super;
 
   private WordBuffer Word = new WordBuffer();
   private LineBuffer Line = new LineBuffer();
@@ -332,7 +332,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
       #else
       {
         MemoryBitStream bb = new MemoryBitStream();
-        Deflator.Deflate( data, bb, 1 );
+        Deflator.Deflate( data, bb );
         int clen = bb.ByteSize();
         Put( "/Length " + clen + ">>stream\n" );
         bb.CopyTo( OS );
@@ -360,7 +360,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     return cs.ToArray();
     #else 
     MemoryBitStream bb = new MemoryBitStream();
-    Deflator.Deflate( data, bb, 1 );
+    Deflator.Deflate( data, bb );
     return bb.ToArray();
     #endif
   }
