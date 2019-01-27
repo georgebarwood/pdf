@@ -1016,7 +1016,7 @@ sealed class MemoryBitStream : OutBitStream
   private class Chunk
   {
     public const int Capacity = 0x800;
-    public byte [] Bytes = new byte[ Capacity ]; // May be better to make thuis a byte array.
+    public byte [] Bytes = new byte[ Capacity ];
     public Chunk Next;
   }
 
