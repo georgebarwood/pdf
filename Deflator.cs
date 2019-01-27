@@ -26,10 +26,11 @@ namespace Pdf {
 
    Deflator ( this code) typically achieves better compression than ZLib ( http://www.componentace.com/zlib_.NET.htm 
    via https://zlib.net/, default settings ) by a few percent, and is faster on small inputs, but slower 
-   on large inputs ( perhaps due to searches not being truncated ).
+   on large inputs.
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output is 148,324 bytes
-   in 50 milliseconds, whereas Deflator output is 143,666 bytes in 58 milliseconds.
+   in 50 milliseconds, whereas Deflator output is 143,666 bytes in 58 milliseconds. If dynamic block sizing
+   is disabled, the output is 146,892 bytes and the time is the same as ZLib.
 
    Compressing a C# source file of 19,483 bytes, Zlib output size is 5,965 bytes in 27 milliseconds, 
    whereas Deflator output is 5,890 bytes, 75 bytes smaller, in 16 milliseconds.
