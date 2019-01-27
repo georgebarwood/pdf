@@ -32,7 +32,7 @@ namespace Pdf {
    in 44 milliseconds, whereas Deflator output is 143,956 bytes, 4,368 bytes smaller, in 50 milliseconds.
 
    Or, setting StartBlockSize to 0x800 instead of 0x1000, Deflator output is 143,675, 4,649 bytes smaller, 
-   in 55 milliconds.
+   in 55 milliseconds.
 
    Compressing a C# source file of 19,483 bytes, Zlib output size is 5,965 bytes in 27 milliseconds, 
    whereas Deflator output is 5,890 bytes, 75 bytes smaller, in 16 milliseconds.
@@ -55,18 +55,32 @@ namespace Pdf {
 
 sealed class Deflator 
 {
-  public static void Deflate( byte [] input, OutBitStream output, int format )
+
+  public static void Deflate( byte [] input, OutBitStream output )  // Deflate with default options.
   {
     Deflator d = new Deflator( input, output );
-    if ( format == 1 ) output.WriteBits( 16, 0x9c78 ); // RFC 1950 bytes.
-    d.FindMatches( input );
-    d.Buffered = input.Length;
-    while ( !d.OutputBlock( true ) );
-    if ( format == 1 )
+    d.Go();
+  }
+
+  // Options : to amend these use new Deflator() and set before calling Go().
+  public int StartBlockSize = 0x1000; // Increase to go faster ( with less compression ), reduce to try for more compression.
+  public int MaxBufferSize = 0x8000; // Must be power of 2, increase to try for slightly more compression on large inputs.
+  public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
+  public bool LZ77 = true; // Set false to go much faster ( with much less compression ).
+  public bool DynamicBlockSize = true; // Set false to go faster ( with less compression ).
+  public bool TuneBlockSize = true; // Set false to go faster ( with less compression ).
+
+  public void Go()
+  {
+    if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
+    if ( LZ77 ) FindMatches( Input );
+    Buffered = Input.Length;
+    while ( !OutputBlock( true ) );
+    if ( RFC1950 )
     { 
-      output.Pad( 8 );
-      output.WriteBits( 32, Adler32( input ) ); // RFC 1950 checksum. 
-    }  
+      Output.Pad( 8 );
+      Output.WriteBits( 32, Adler32( Input ) );
+    } 
   }
 
   // Private constants.
@@ -75,10 +89,6 @@ sealed class Deflator
   private const int MinMatch = 3;
   private const int MaxMatch = 258;
   private const int MaxDistance = 0x8000;
-
-  private const int StartBlockSize = 0x1000; // Minimum blocksize, actual may be larger. Need not be power of two.
-  private const bool DynamicBlockSize = true; 
-  private const int MaxBufferSize = 0x8000; // Must be power of 2.
 
   // Instead of initialising LZ77 hashTable and link arrays to -(MaxDistance+1), EncodePosition 
   // is added when storing a value and subtracted when retrieving a value.
@@ -102,7 +112,7 @@ sealed class Deflator
 
   // Private functions and classes.
 
-  private Deflator( byte [] input, OutBitStream output )
+  public Deflator( byte [] input, OutBitStream output )
   { 
     Input = input; 
     Output = output; 
@@ -260,6 +270,7 @@ sealed class Deflator
 
     Block b = new Block( this, blockSize, null );
     int bits = b.GetBits(); // Compressed size in bits.
+    int finalBlockSize = blockSize;
 
     // Investigate larger block size.
     while ( b.End < Buffered && DynamicBlockSize ) 
@@ -273,14 +284,21 @@ sealed class Deflator
       int bits2 = b2.GetBits();
       int bits3 = b3.GetBits(); 
 
-      // At this point could "tune" the size of b to minimise bits + bits2.
+      int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out finalBlockSize ) : 0;
 
-      if ( bits3 > bits + bits2 ) break;
+      if ( bits3 > bits + bits2 + delta ) break;
 
       bits = bits3;
       b = b3;
       blockSize += blockSize; 
+      finalBlockSize = blockSize;
     }      
+
+    if ( finalBlockSize > blockSize )
+    {
+      b = new Block( this, finalBlockSize, null ); 
+      b.GetBits();
+    }
 
     // Output the block.
     if ( b.End < Buffered ) last = false;
@@ -424,6 +442,69 @@ sealed class Deflator
       BufferEnd = bufferRead;
       return position;
     }
+
+    public int TuneBoundary( Deflator d, Block prev, int howfar, out int blockSize )
+    {
+      // Investigate whether moving data into the previous block uses fewer bits,
+      // using the current encodings. If a symbol with no encoding in the 
+      // previous block is found, terminate the search ( goto EndSearch ).
+
+      int position = Start;
+      int bufferRead = BufferStart;
+      int end = position + howfar;
+      if ( end > End ) end = End;
+
+      int delta = 0, bestDelta = 0, bestPosition = position;
+
+      while ( position < End && bufferRead != d.BufferWrite )
+      {
+        int matchPosition = d.PositionBuffer[ bufferRead ];
+
+        if ( matchPosition >= End ) break;
+
+        int length = d.LengthBuffer[ bufferRead ] + MinMatch;
+        int distance = d.DistanceBuffer[ bufferRead  ]; 
+
+        bufferRead = ( bufferRead  + 1 ) & d.BufferMask;
+
+        while ( position < matchPosition ) 
+        {
+          byte b = d.Input[ position ];
+ 
+          if ( prev.Lit.Bits[ b ] == 0 ) goto EndSearch;
+          delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
+          if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
+          position += 1;
+        }  
+        position += length;
+
+        // Compute match and distance codes.
+        int mc = 0; while ( length >= MatchOff[ mc ] ) mc += 1; mc -= 1;
+        int dc = 29; while ( distance < DistOff[ dc ] ) dc -= 1;
+
+        if ( prev.Lit.Bits[ 257 + mc ] == 0 || prev.Dist.Bits[ dc ] == 0 ) goto EndSearch;
+        delta += prev.Lit.Bits[ 257 + mc ] - Lit.Bits[ 257 + mc  ];
+        delta += prev.Dist.Bits[ dc ] - Dist.Bits[ dc ];
+
+        if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
+        position += 1;
+      }
+
+      while ( position < end ) 
+      {
+        byte b = d.Input[ position ];
+        if ( prev.Lit.Bits[ b ] == 0 ) goto EndSearch;
+        delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
+        if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
+        position += 1;
+      }  
+
+      EndSearch:
+      
+      blockSize = bestPosition - prev.Start;
+      return bestDelta;
+    }
+
 
     private void PutCodes( Deflator d )
     {
