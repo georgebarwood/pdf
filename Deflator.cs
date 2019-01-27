@@ -75,7 +75,7 @@ sealed class Deflator
   private const int MaxMatch = 258;
   private const int MaxDistance = 0x8000;
 
-  private const int StartBlockSize = 0x1000; // Initial blocksize, actual may be larger or smaller. Need not be power of two.
+  private const int StartBlockSize = 0x1000; // Minimum blocksize, actual may be larger. Need not be power of two.
   private const bool DynamicBlockSize = true; 
   private const int MaxBufferSize = 0x8000; // Must be power of 2.
 
