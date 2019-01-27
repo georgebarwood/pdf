@@ -70,6 +70,12 @@ sealed class Deflator
   public bool DynamicBlockSize = true; // Set false to go faster ( with less compression ).
   public bool TuneBlockSize = true; // Set false to go faster ( with less compression ).
 
+  public Deflator( byte [] input, OutBitStream output )
+  { 
+    Input = input; 
+    Output = output; 
+  }
+
   public void Go()
   {
     int bufferSize = CalcBufferSize( Input.Length / 3, MaxBufferSize );
@@ -118,11 +124,6 @@ sealed class Deflator
 
   // Private functions and classes.
 
-  public Deflator( byte [] input, OutBitStream output )
-  { 
-    Input = input; 
-    Output = output; 
-  }
 
   private static int CalcBufferSize( int n, int max )
   // Calculates a power of 2 >= n, but not more than max.
