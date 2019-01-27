@@ -39,7 +39,7 @@ namespace Pdf {
 
    byte [] data = { 1, 2, 3, 4 };
    var mbs = new MemoryBitStream();
-   Deflator.Deflate( data, mbs, 1 );
+   Deflator.Deflate( data, mbs );
    byte [] deflated_data = mbs.ToArray();
   
    The MemoryBitStream may alternatively be copied to a stream, this may be useful when writing PDF files ( the intended use case ).
