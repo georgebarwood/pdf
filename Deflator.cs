@@ -29,10 +29,7 @@ namespace Pdf {
    on large inputs ( perhaps due to searches not being truncated ).
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output is 148,324 bytes
-   in 44 milliseconds, whereas Deflator output is 143,956 bytes, 4,368 bytes smaller, in 50 milliseconds.
-
-   Or, setting StartBlockSize to 0x800 instead of 0x1000, Deflator output is 143,675, 4,649 bytes smaller, 
-   in 55 milliseconds.
+   in 50 milliseconds, whereas Deflator output is 143,666 bytes in 58 milliseconds.
 
    Compressing a C# source file of 19,483 bytes, Zlib output size is 5,965 bytes in 27 milliseconds, 
    whereas Deflator output is 5,890 bytes, 75 bytes smaller, in 16 milliseconds.
@@ -123,7 +120,6 @@ sealed class Deflator
   private int BufferWrite, BufferRead; // Indexes for writing and reading.
 
   // Private functions and classes.
-
 
   private static int CalcBufferSize( int n, int max )
   // Calculates a power of 2 >= n, but not more than max.
