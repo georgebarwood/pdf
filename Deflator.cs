@@ -580,7 +580,7 @@ sealed class Deflator
 
 struct HuffmanCoding // Variable length coding.
 {
-  public ushort Count; // Number of used symbols.
+  public ushort Count; // Number of symbols.
   public byte [] Bits; // Number of bits used to encode a symbol ( code length ).
   public ushort [] Codes; // Huffman code for a symbol ( bit 0 is most significant ).
   public int [] Used; // Count of how many times a symbol is used in the block being encoded.
@@ -692,7 +692,7 @@ struct HuffmanCoding // Variable length coding.
       }
     }
 
-    // Reduce Count if there are unused symbols.
+    // Reduce Count if there are unused trailing symbols.
     while ( Count > 0 && Bits[ Count - 1 ] == 0 ) Count -= 1;
 
     // System.Console.WriteLine( "HuffmanCoding.ComputeCodes" );
@@ -754,6 +754,8 @@ struct HuffmanCoding // Variable length coding.
     int n = heap.Count; 
     ulong [] sorted = new ulong[ n ];
     for ( int i = 0; i < n; i += 1 ) sorted[ i ] = heap.Remove();
+
+    // Sort is complete.
 
     // List class is from System.Collections.Generic.
     List<ulong> merged = new List<ulong>( Count ), 
