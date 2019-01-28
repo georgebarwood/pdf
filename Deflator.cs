@@ -44,7 +44,7 @@ namespace Pdf {
    *  OutBitStream.
    *  MemoryBitStream : an implementation of OutBitStream.
    *  HuffmanCoding calculates Huffman codes.
-   *  UlongHeap : used to implemnt HuffmanCoding.
+   *  UlongHeap : used to implement HuffmanCoding.
 */   
 
 sealed class Deflator 
