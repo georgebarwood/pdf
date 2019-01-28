@@ -264,7 +264,7 @@ sealed class Deflator
 
     Block b = new Block( this, blockSize, null );
     int bits = b.GetBits(); // Compressed size in bits.
-    int finalBlockSize = blockSize;
+    int tunedBlockSize = blockSize;
 
     // Investigate larger block size.
     while ( b.End < Buffered && DynamicBlockSize ) 
@@ -278,23 +278,21 @@ sealed class Deflator
       int bits2 = b2.GetBits();
       int bits3 = b3.GetBits(); 
 
-      int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out finalBlockSize ) : 0;
+      int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out tunedBlockSize ) : 0;
 
       if ( bits3 > bits + bits2 + delta ) break;
 
       bits = bits3;
       b = b3;
       blockSize += blockSize; 
-      finalBlockSize = blockSize;
+      tunedBlockSize = blockSize;
     }      
 
-    if ( finalBlockSize > blockSize )
+    if ( tunedBlockSize > blockSize )
     {
-      b = new Block( this, finalBlockSize, null ); 
+      b = new Block( this, tunedBlockSize, null ); 
       b.GetBits();
     }
-
-    // System.Console.WriteLine(" Block size=" + finalBlockSize );
 
     // Output the block.
     if ( b.End < Buffered ) last = false;
@@ -452,11 +450,11 @@ sealed class Deflator
 
       int delta = 0, bestDelta = 0, bestPosition = position;
 
-      while ( position < End && bufferRead != d.BufferWrite )
+      while ( position < end && bufferRead != d.BufferWrite )
       {
         int matchPosition = d.PositionBuffer[ bufferRead ];
 
-        if ( matchPosition >= End ) break;
+        if ( matchPosition >= end ) break;
 
         int length = d.LengthBuffer[ bufferRead ] + MinMatch;
         int distance = d.DistanceBuffer[ bufferRead  ]; 
