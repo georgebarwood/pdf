@@ -23,16 +23,13 @@ namespace Pdf {
 
    Only dynamic huffman blocks are used, no attempt is made to use Fixed or Copy blocks.
 
-   Deflator ( this code) typically achieves better compression than ZLib ( http://www.componentace.com/zlib_.NET.htm 
-   via https://zlib.net/, default settings ) by a few percent, and is faster on small inputs, but slower 
-   on large inputs.
+   Deflator ( this code) typically achieves better compression than ZLib 
+   ( http://www.componentace.com/zlib_.NET.htm  via https://zlib.net/ ) 
+   and takes a little longer ( default options, after warmup ).
 
-   For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output is 148,324 bytes
-   in 50 milliseconds, whereas Deflator output is 143,666 bytes in 58 milliseconds. If dynamic block sizing
-   is disabled, the output is 146,892 bytes and the time is the same as ZLib.
-
-   Compressing a C# source file of 19,483 bytes, Zlib output size is 5,965 bytes in 27 milliseconds, 
-   whereas Deflator output is 5,890 bytes, 75 bytes smaller, in 16 milliseconds.
+   For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
+   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,660 bytes 
+   in 33 milliseconds.
 
    Sample usage:
 
@@ -61,7 +58,7 @@ sealed class Deflator
 
   // Options : to amend these use new Deflator( input, output ) and set before calling Go().
   public int StartBlockSize = 0x1000; // Increase to go faster ( with less compression ), reduce to try for more compression.
-  public int MaxBufferSize = 0x8000; // Must be power of 2, increase to try for slightly more compression on large inputs.
+  public int MaxBufferSize = 0x2000; // Must be power of 2, increase to try for slightly more compression on large inputs.
   public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
   public bool LZ77 = true; // Set false to go much faster ( with much less compression ).
   public bool DynamicBlockSize = true; // Set false to go faster ( with less compression ).
@@ -296,6 +293,8 @@ sealed class Deflator
       b = new Block( this, finalBlockSize, null ); 
       b.GetBits();
     }
+
+    // System.Console.WriteLine(" Block size=" + finalBlockSize );
 
     // Output the block.
     if ( b.End < Buffered ) last = false;
