@@ -76,12 +76,6 @@ sealed class Deflator
 
   public void Go()
   {
-    int bufferSize = CalcBufferSize( Input.Length / 3, MaxBufferSize );
-    PositionBuffer = new int[ bufferSize ];
-    LengthBuffer   = new byte[ bufferSize ];
-    DistanceBuffer = new ushort[ bufferSize ];   
-    BufferMask = bufferSize - 1; 
-
     if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
     if ( LZ77 ) FindMatches( Input );
     Buffered = Input.Length;
@@ -133,6 +127,12 @@ sealed class Deflator
 
   private void FindMatches( byte [] input ) // LZ77 compression.
   {
+    int bufferSize = CalcBufferSize( Input.Length / 3, MaxBufferSize );
+    PositionBuffer = new int[ bufferSize ];
+    LengthBuffer   = new byte[ bufferSize ];
+    DistanceBuffer = new ushort[ bufferSize ];   
+    BufferMask = bufferSize - 1; 
+
     if ( input.Length < MinMatch ) return;
     int limit = input.Length - 2;
 
