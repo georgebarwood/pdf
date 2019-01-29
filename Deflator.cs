@@ -1,4 +1,9 @@
 using System.Collections.Generic;
+#if x32
+using uword = System.UInt32;
+#else
+using uword = System.UInt64;
+#endif
 
 namespace Pdf {
 
@@ -996,8 +1001,8 @@ struct UlongHeap // An array organised so the smallest element can be efficientl
 
 abstract class OutBitStream
 {
-  public void WriteBits( int n, ulong value )
-  // Write first n ( 0 <= n <= 64 ) bits of value to stream, least significant bit is written first.
+  public void WriteBits( int n, uword value )
+  // Write first n bits of value to stream, least significant bit is written first.
   // Unused bits of value must be zero, i.e. value must be in range 0 .. 2^n-1.
   {
     if ( n + BitsInWord >= WordCapacity )
@@ -1022,10 +1027,10 @@ abstract class OutBitStream
 
   public abstract void Save( ulong word );
 
-  protected const int WordSize = sizeof(ulong);  // Size of Word in bytes.
-  protected const int WordCapacity = WordSize * 8; // Number of bits that can be stored Word
+  protected const int WordSize = sizeof(uword);  // Size of Word in bytes.
+  protected uword Word; // Bits are first stored in Word, when full, Word is saved.
 
-  protected ulong Word; // Bits are first stored in Word, when full, Word is saved.
+  protected const int WordCapacity = WordSize * 8; // Number of bits that can be stored Word
   protected int BitsInWord; // Number of bits currently stored in Word.
    
 }
@@ -1054,7 +1059,7 @@ sealed class MemoryBitStream : OutBitStream
     }
 
     int biw = BitsInWord;
-    ulong word = Word;
+    uword word = Word;
     while ( biw > 0 )
     {
       s.WriteByte( unchecked( (byte) word ) );
@@ -1106,6 +1111,12 @@ sealed class MemoryBitStream : OutBitStream
     byte [] bytes = CurrentChunk.Bytes;
     unchecked
     {
+      #if x32
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w; w >>= 8;
+      bytes[ i++ ] = (byte) w;
+      #else
       bytes[ i++ ] = (byte) w; w >>= 8;
       bytes[ i++ ] = (byte) w; w >>= 8;
       bytes[ i++ ] = (byte) w; w >>= 8;
@@ -1114,6 +1125,7 @@ sealed class MemoryBitStream : OutBitStream
       bytes[ i++ ] = (byte) w; w >>= 8;
       bytes[ i++ ] = (byte) w; w >>= 8;
       bytes[ i++ ] = (byte) w;
+      #endif
     }
     BytesInCurrentChunk = i;
   }
