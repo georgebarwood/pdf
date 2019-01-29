@@ -32,7 +32,7 @@ namespace Pdf {
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
    is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,660 bytes 
-   in 33 milliseconds.
+   in 28 milliseconds.
 
    Sample usage:
 
@@ -128,6 +128,20 @@ sealed class Deflator
     return result;
   }
 
+  int HashShift;
+  uint HashMask;
+  int [] HashTable;
+
+  bool MatchPossible( int position, int matchLength )
+  {
+    int end = position + matchLength - 3;
+    uint hash = ( (uint)Input[ end+0 ] << HashShift ) + Input[ end+1 ];
+    hash = ( ( hash << HashShift ) + Input[ end + 2 ] ) & HashMask;        
+    int hashEntry = HashTable[ hash ];
+    if ( hashEntry < end ) return false;
+    return true;
+  }
+
   private void FindMatches( byte [] input ) // LZ77 compression.
   {
     if ( input.Length < MinMatch ) return;
@@ -145,6 +159,10 @@ sealed class Deflator
 
     int [] hashTable = new int[ hashMask + 1 ];
     int [] link = new int[ limit ];
+
+    HashShift = hashShift;
+    HashMask = hashMask;
+    HashTable = hashTable;
 
     int position = 0; // position in input.
 
@@ -207,7 +225,7 @@ sealed class Deflator
   // BestMatch finds the best match starting at position. 
   // oldPosition is from hash table, link [] is linked list of older positions.
 
-  private static int BestMatch( byte [] input, int position, out int distance, int oldPosition, int [] link )
+  private int BestMatch( byte [] input, int position, out int distance, int oldPosition, int [] link )
   { 
     int avail = input.Length - position;
     if ( avail > MaxMatch ) avail = MaxMatch;
@@ -228,6 +246,7 @@ sealed class Deflator
           bestMatch = match;
           bestDistance = position - oldPosition;
           if ( bestMatch == avail ) break;
+          if ( ! MatchPossible( position, bestMatch+1 ) ) break;
         }
       }
       oldPosition = link[ oldPosition ];
