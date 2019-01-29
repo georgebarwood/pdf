@@ -118,9 +118,9 @@ sealed class Deflator
   private int BufferWrite, BufferRead; // Indexes for writing and reading.
 
   // LZ77 hash table ( for MatchPossible function )
-  int HashShift;
-  uint HashMask;
-  int [] HashTable;
+  private int HashShift;
+  private uint HashMask;
+  private int [] HashTable;
 
   // Private functions and classes.
 
@@ -211,6 +211,8 @@ sealed class Deflator
         position += 1;
       }
     }
+
+    HashTable = null; // To potentially free up memory.
   }
 
   // BestMatch finds the best match starting at position. 
@@ -257,8 +259,7 @@ sealed class Deflator
     uint hash = ( (uint)Input[ end+0 ] << HashShift ) + Input[ end+1 ];
     hash = ( ( hash << HashShift ) + Input[ end + 2 ] ) & HashMask;        
     int hashEntry = HashTable[ hash ];
-    if ( end >= hashEntry ) return false;
-    return true;
+    return end < hashEntry;
   }
 
   private static int CalcHashShift( int n )
