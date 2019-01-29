@@ -117,6 +117,11 @@ sealed class Deflator
   private int BufferMask;
   private int BufferWrite, BufferRead; // Indexes for writing and reading.
 
+  // LZ77 hash table ( for MatchPossible function )
+  int HashShift;
+  uint HashMask;
+  int [] HashTable;
+
   // Private functions and classes.
 
   private static int CalcBufferSize( int n, int max )
@@ -126,20 +131,6 @@ sealed class Deflator
     int result = 1;
     while ( result < n ) result = result << 1;
     return result;
-  }
-
-  int HashShift;
-  uint HashMask;
-  int [] HashTable;
-
-  bool MatchPossible( int position, int matchLength )
-  {
-    int end = position + matchLength - 3;
-    uint hash = ( (uint)Input[ end+0 ] << HashShift ) + Input[ end+1 ];
-    hash = ( ( hash << HashShift ) + Input[ end + 2 ] ) & HashMask;        
-    int hashEntry = HashTable[ hash ];
-    if ( hashEntry < end ) return false;
-    return true;
   }
 
   private void FindMatches( byte [] input ) // LZ77 compression.
@@ -255,6 +246,19 @@ sealed class Deflator
     }
     distance = bestDistance;
     return bestMatch;
+  }
+
+  // MatchPossible is used to try and shorten the BestMatch search by checking whether 
+  // there is a hash entry for the last 3 bytes of the next longest possible match.
+
+  private bool MatchPossible( int position, int matchLength )
+  {
+    int end = position + matchLength - 3;
+    uint hash = ( (uint)Input[ end+0 ] << HashShift ) + Input[ end+1 ];
+    hash = ( ( hash << HashShift ) + Input[ end + 2 ] ) & HashMask;        
+    int hashEntry = HashTable[ hash ];
+    if ( end >= hashEntry ) return false;
+    return true;
   }
 
   private static int CalcHashShift( int n )
