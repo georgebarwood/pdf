@@ -989,6 +989,7 @@ abstract class OutBitStream
 
   protected ulong Word; // Bits are first stored in Word, when full, Word is saved.
   protected int BitsInWord; // Number of bits currently stored in Word.
+   
 }
 
 
@@ -1008,7 +1009,6 @@ sealed class MemoryBitStream : OutBitStream
 
   public void CopyTo( System.IO.Stream s ) 
   {
-    byte [] buffer = new byte [ WordSize ];
     for ( Chunk c = FirstChunk; c != null; c = c.Next )
     { 
       int n = ( c == CurrentChunk ) ? BytesInCurrentChunk : Chunk.Capacity;
@@ -1027,13 +1027,13 @@ sealed class MemoryBitStream : OutBitStream
 
   public byte [] ToArray()
   {
-    byte [] buffer = new byte[ ByteSize() ];
+    byte [] result = new byte[ ByteSize() ];
     int i = 0;
 
     for ( Chunk c = FirstChunk; c != null; c = c.Next )
     { 
       int n = ( c == CurrentChunk ) ? BytesInCurrentChunk : Chunk.Capacity;
-      System.Array.Copy( c.Bytes, 0, buffer, i, n ); 
+      System.Array.Copy( c.Bytes, 0, result, i, n ); 
       i += n;
     }
 
@@ -1041,11 +1041,11 @@ sealed class MemoryBitStream : OutBitStream
     ulong word = Word;
     while ( biw > 0 )
     {
-      buffer[ i++ ] = unchecked( (byte) word );
+      result[ i++ ] = unchecked( (byte) word );
       word >>= 8;
       biw -= 8;
     }
-    return buffer;
+    return result;
   }
 
   public MemoryBitStream()
