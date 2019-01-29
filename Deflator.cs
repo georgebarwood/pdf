@@ -60,16 +60,17 @@ sealed class Deflator
   }
 
   // Options : to amend these use new Deflator( input, output ) and set before calling Go().
+  // Possible "fast" setting : StartBlockSize = 0x4000, LazyMatch = false, DynamicBlockSize = false.
   public int StartBlockSize = 0x1000; // Increase to go faster ( with less compression ), reduce to try for more compression.
   public int MaxBufferSize = 0x2000; // Must be power of 2, increase to try for slightly more compression on large inputs.
-
-  public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
 
   // Compression options - set false to go faster.
   public bool LZ77 = true;
   public bool LazyMatch = true;
   public bool DynamicBlockSize = true; 
   public bool TuneBlockSize = true;
+
+  public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
 
   public Deflator( byte [] input, OutBitStream output )
   { 
