@@ -2,6 +2,9 @@ using System.Collections.Generic;
 
 namespace Pdf {
 
+// ToDo : investigate using parallel processsing pipeline.
+// Say : one thread to find matches, one ( or two? ) to compute block lengths, another to output blocks.
+
 /* RFC 1951 compression ( https://www.ietf.org/rfc/rfc1951.txt ) aims to compress a stream of bytes using :
 
    (1) LZ77 matching, where if an input sequences of at least 3 bytes re-occurs, it may be coded 
@@ -59,10 +62,14 @@ sealed class Deflator
   // Options : to amend these use new Deflator( input, output ) and set before calling Go().
   public int StartBlockSize = 0x1000; // Increase to go faster ( with less compression ), reduce to try for more compression.
   public int MaxBufferSize = 0x2000; // Must be power of 2, increase to try for slightly more compression on large inputs.
+
   public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
-  public bool LZ77 = true; // Set false to go much faster ( with much less compression ).
-  public bool DynamicBlockSize = true; // Set false to go faster ( with less compression ).
-  public bool TuneBlockSize = true; // Set false to go faster ( with less compression ).
+
+  // Compression options - set false to go faster.
+  public bool LZ77 = true;
+  public bool LazyMatch = true;
+  public bool DynamicBlockSize = true; 
+  public bool TuneBlockSize = true;
 
   public Deflator( byte [] input, OutBitStream output )
   { 
@@ -85,10 +92,10 @@ sealed class Deflator
 
   // Private constants.
 
-  // RFC 1951 limits.
-  private const int MinMatch = 3;
-  private const int MaxMatch = 258;
-  private const int MaxDistance = 0x8000;
+  // RFC 1951 match ( LZ77 ) limits.
+  private const int MinMatch = 3; // The smallest match eligible for LZ77 encoding.
+  private const int MaxMatch = 258; // The largest match eligible for LZ77 encoding.
+  private const int MaxDistance = 0x8000; // The largest distance backwards in input from current position that can be encoded.
 
   // Instead of initialising LZ77 hashTable and link arrays to -(MaxDistance+1), EncodePosition 
   // is added when storing a value and subtracted when retrieving a value.
@@ -140,6 +147,8 @@ sealed class Deflator
     int [] link = new int[ limit ];
 
     int position = 0; // position in input.
+
+    // hash will be hash of three bytes starting at position.
     uint hash = ( (uint)input[ 0 ] << hashShift ) + input[ 1 ];
 
     while ( position < limit )
@@ -154,14 +163,14 @@ sealed class Deflator
       }
       link[ position ] = hashEntry;
 
-      int distance, match = BestMatch( input, link, hashEntry - EncodePosition, position, out distance );
+      int distance, match = BestMatch( input, position, out distance, hashEntry - EncodePosition, link );
       position += 1;
       if ( match < MinMatch ) continue;
 
       // "Lazy matching" RFC 1951 p.15 : if there are overlapping matches, there is a choice over which of the match to use.
       // Example: "abc012bc345.... abc345". Here abc345 can be encoded as either [abc][345] or as a[bc345].
       // Since a range typically needs more bits to encode than a single literal, choose the latter.
-      while ( position < limit ) 
+      while ( LazyMatch && position < limit ) 
       {
         hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;          
         hashEntry = hashTable[ hash ];
@@ -169,7 +178,7 @@ sealed class Deflator
         if ( position >= hashEntry ) break;
         link[ position ] = hashEntry;
 
-        int distance2, match2 = BestMatch( input, link, hashEntry - EncodePosition, position, out distance2 );
+        int distance2, match2 = BestMatch( input, position, out distance2, hashEntry - EncodePosition, link );
         if ( match2 > match || match2 == match && distance2 < distance )
         {
           match = match2;
@@ -195,7 +204,10 @@ sealed class Deflator
     }
   }
 
-  private static int BestMatch( byte [] input, int [] link, int oldPosition, int position, out int distance )
+  // BestMatch finds the best match starting at position. 
+  // oldPosition is from hash table, link [] is linked list of older positions.
+
+  private static int BestMatch( byte [] input, int position, out int distance, int oldPosition, int [] link )
   { 
     int avail = input.Length - position;
     if ( avail > MaxMatch ) avail = MaxMatch;
@@ -206,10 +218,11 @@ sealed class Deflator
     { 
       if ( input[ position + bestMatch ] == input[ oldPosition + bestMatch ] )
       {
-        int match = 0;  
+        int match = 0; 
         while ( match < avail && input[ position + match ] == input[ oldPosition + match ] ) 
+        {
           match += 1;
-
+        }
         if ( match > bestMatch )
         {
           bestMatch = match;
@@ -577,7 +590,7 @@ sealed class Deflator
         int length = lengths[ i ];
         if ( length == 0 )
         { 
-          EncodeRepeat(); 
+          if ( Repeat != 0 ) EncodeRepeat(); 
           ZeroRun += 1; 
           PreviousLength = 0; 
         }
@@ -587,9 +600,9 @@ sealed class Deflator
         }
         else 
         { 
-          EncodeZeroRun(); 
-          EncodeRepeat(); 
-          PutLength( length ); 
+          if ( ZeroRun > 0 ) EncodeZeroRun(); 
+          if ( Repeat > 0 ) EncodeRepeat(); 
+          PutLength( length );
           PreviousLength = length; 
         }
       }      
