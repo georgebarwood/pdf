@@ -1065,12 +1065,12 @@ abstract class OutBitStream
     if ( w > 0 ) WriteBits( n - w, 0 );
   }
 
-  public abstract void Save( ulong word );
+  public abstract void Save( uword word );
 
-  protected const int WordSize = sizeof(uword);  // Size of Word in bytes.
   protected uword Word; // Bits are first stored in Word, when full, Word is saved.
+  protected const int WordSize = sizeof(uword);  // Size of Word in bytes.
 
-  protected const int WordCapacity = WordSize * 8; // Number of bits that can be stored Word
+  protected const int WordCapacity = WordSize * 8; // Number of bits that can be stored in Word
   protected int BitsInWord; // Number of bits currently stored in Word.
    
 }
@@ -1121,7 +1121,7 @@ sealed class MemoryBitStream : OutBitStream
     }
 
     int biw = BitsInWord;
-    ulong word = Word;
+    uword word = Word;
     while ( biw > 0 )
     {
       result[ i++ ] = unchecked( (byte) word );
@@ -1137,7 +1137,7 @@ sealed class MemoryBitStream : OutBitStream
     CurrentChunk = FirstChunk;
   }
 
-  public override void Save( ulong w )
+  public override void Save( uword w )
   {
     if ( BytesInCurrentChunk == Chunk.Capacity )
     {
