@@ -139,7 +139,7 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   public virtual void NewColumn()
   {
-    if ( CurColumn+1 < Columns )
+    if ( CurColumn + 1 < Columns )
     {
       LineMarginBefore += LineLength + ColSpace;
       FirstLine = true;
@@ -359,9 +359,9 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     zip.Finish();
     return cs.ToArray();
     #else 
-    MemoryBitStream bb = new MemoryBitStream();
-    Deflator.Deflate( data, bb );
-    return bb.ToArray();
+    MemoryBitStream mbs = new MemoryBitStream();
+    Deflator.Deflate( data, mbs );
+    return mbs.ToArray();
     #endif
   }
 
