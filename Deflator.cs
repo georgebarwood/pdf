@@ -284,6 +284,7 @@ sealed class Deflator
   private int SaveMatch ( int position, int length, int distance )
   // Called from FindMatches to save a <length,distance> match. Returns position + length.
   {
+    // System.Console.WriteLine( "SaveMatch postion=" + position + " length=" + length + " distance=" + distance );
     int i = BufferWrite;
     PositionBuffer[ i ] = position;
     LengthBuffer[ i ] = (byte) (length - MinMatch);
@@ -749,6 +750,7 @@ struct HuffmanCoding // Variable length coding.
     heap.Make();
 
     int maxBits = 0;
+    int nonZero = heap.Count;
 
     if ( heap.Count == 1 )
     { 
@@ -785,7 +787,7 @@ struct HuffmanCoding // Variable length coding.
       else
       {
         maxBits = Limit;
-        PackageMerge();
+        PackageMerge( nonZero );
       }
     }
 
@@ -851,7 +853,7 @@ struct HuffmanCoding // Variable length coding.
   // The result is technically not a Huffman code in this case ( due to the imposed limit ).
   // See https://en.wikipedia.org/wiki/Package-merge_algorithm for a description of the algorithm.
 
-  private void PackageMerge()
+  private void PackageMerge( int usedNonZero )
   {
     // Tree nodes are encoded in a ulong using 16 bits for the id, 32 bits for Used.
     const int IdBits = 16, UsedBits = 32;
@@ -862,15 +864,14 @@ struct HuffmanCoding // Variable length coding.
 
     // First create the leaf nodes and sort.
 
-    List<ulong> list = new List<ulong>( Count );
-    for ( uint i = 0; i < Count; i += 1 ) 
+    ulong [] sorted = new ulong[ usedNonZero ];
+    for ( uint i = 0, j = 0; i < Count; i += 1 ) 
     {
       if ( Used[ i ] != 0 ) 
       {
-        list.Add( (ulong)Used[ i ] << IdBits | i );
+        sorted[ j++ ] = (ulong)Used[ i ] << IdBits | i;
       }
     }
-    ulong [] sorted = list.ToArray();
     System.Array.Sort( sorted );
 
     // Sort is complete.
@@ -1047,7 +1048,7 @@ abstract class OutBitStream
   {
     if ( n + BitsInWord >= WordCapacity )
     {
-      Save( Word | value << BitsInWord );
+      Save( value << BitsInWord | Word );
       int space = WordCapacity - BitsInWord;
       value >>= space;
       n -= space;
@@ -1067,11 +1068,10 @@ abstract class OutBitStream
 
   public abstract void Save( uword word );
 
-  protected uword Word; // Bits are first stored in Word, when full, Word is saved.
-
   protected const int WordCapacity = sizeof(uword) * 8; // Number of bits that can be stored in Word
+  protected uword Word; // Bits are first stored in Word, when full, Word is saved.
   protected int BitsInWord; // Number of bits currently stored in Word.
-   
+ 
 }
 
 
@@ -1080,6 +1080,8 @@ abstract class OutBitStream
 
 class MemoryBitStream : OutBitStream
 {
+  // An implementation of OutBitStream where the bits are stored in memory.
+  // The storage is a linked list of Chunks.
   // ByteSize returns the current size in bytes.
   // CopyTo copies the contents to a Stream.
   // ToArray returns the contents as an array of bytes.
@@ -1169,16 +1171,16 @@ class MemoryBitStream : OutBitStream
     BytesInCurrentChunk = i;
   }
 
-  protected int BytesInCurrentChunk;
-  protected int CompleteChunks;
-  protected Chunk FirstChunk, CurrentChunk;
-
   protected class Chunk
   {
     public const int Capacity = 0x800;
     public byte [] Bytes = new byte[ Capacity ];
     public Chunk Next;
   }
+
+  protected int BytesInCurrentChunk;
+  protected int CompleteChunks;
+  protected Chunk FirstChunk, CurrentChunk;
 
 } // end class MemoryBitStream
 
