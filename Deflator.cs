@@ -1011,30 +1011,24 @@ struct UlongHeap // An array organised so the smallest element can be efficientl
 
   public void Make()
   {
-    // Initialise the heap by making every child less than it's parent.
+    // Initialise the heap by making every parent less than both it's children.
     int p = ( _Count - 2 ) / 2; // parent of last element.
     while ( p >= 0 )
     {
-      // bubble p down.
+      // Bubble element at p down.
       int j = p;
       ulong e = Array[ j ];
       while ( true )
       {
-        int c = j + j + 1;
-        if ( c >= _Count ) break;
+        int c = j + j + 1; if ( c >= _Count ) break;
         ulong ce = Array[ c ];
         if ( c + 1 < _Count )
         {
           ulong ce2 = Array[ c + 1 ];
-          if ( ce2 < ce )
-          {
-            c += 1;
-            ce = ce2;
-          }
+          if ( ce2 < ce ) { c += 1; ce = ce2; }
         }
-        if ( e < ce ) break;
-        Array[ j ] = ce;
-        j = c;
+        if ( ce >= e ) break;
+        Array[ j ] = ce; j = c;
       }
       Array[ j ] = e;
       p -= 1;   
