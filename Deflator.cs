@@ -860,20 +860,18 @@ struct HuffmanCoding // Variable length coding.
     Left = new ushort[ Count * Limit ];
     Right = new ushort[ Count * Limit ];
 
-    // First sort using Heapsort.
-    UlongHeap heap = new UlongHeap( Count );
+    // First create the leaf nodes and sort.
+
+    List<ulong> list = new List<ulong>( Count );
     for ( uint i = 0; i < Count; i += 1 ) 
     {
       if ( Used[ i ] != 0 ) 
       {
-        heap.Add( (ulong)Used[ i ] << IdBits | i );
+        list.Add( (ulong)Used[ i ] << IdBits | i );
       }
     }
-    heap.Make();
-
-    int n = heap.Count; 
-    ulong [] sorted = new ulong[ n ];
-    for ( int i = 0; i < n; i += 1 ) sorted[ i ] = heap.Remove();
+    ulong [] sorted = list.ToArray();
+    System.Array.Sort( sorted );
 
     // Sort is complete.
 
