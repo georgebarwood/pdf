@@ -37,7 +37,7 @@ namespace Pdf {
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
    is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,660 bytes 
-   in 28 milliseconds.
+   in 27 milliseconds.
 
    Sample usage:
 
@@ -224,16 +224,17 @@ sealed class Deflator
   // BestMatch finds the best match starting at position. 
   // oldPosition is from hash table, link [] is linked list of older positions.
 
-  private int BestMatch( byte [] input, int position, out int distance, int oldPosition, int [] link )
+  private int BestMatch( byte [] input, int position, out int bestDistance, int oldPosition, int [] link )
   { 
     int avail = input.Length - position;
     if ( avail > MaxMatch ) avail = MaxMatch;
 
-    int bestMatch = 0, bestDistance = 0;
+    int bestMatch = 0; bestDistance = 0;
+    byte keyByte = input[ position + bestMatch ];
 
     while ( true )
     { 
-      if ( input[ position + bestMatch ] == input[ oldPosition + bestMatch ] )
+      if ( keyByte == input[ oldPosition + bestMatch ] )
       {
         int match = 0; 
         while ( match < avail && input[ position + match ] == input[ oldPosition + match ] ) 
@@ -244,15 +245,14 @@ sealed class Deflator
         {
           bestMatch = match;
           bestDistance = position - oldPosition;
-          if ( bestMatch == avail ) break;
-          if ( ! MatchPossible( position, bestMatch + 1 ) ) break;
+          if ( bestMatch == avail || ! MatchPossible( position, bestMatch + 1 ) ) break;
+          keyByte = input[ position + bestMatch ];
         }
       }
       oldPosition = link[ oldPosition ];
       if ( position >= oldPosition ) break;
       oldPosition -= EncodePosition;
     }
-    distance = bestDistance;
     return bestMatch;
   }
 
