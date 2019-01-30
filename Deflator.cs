@@ -1068,9 +1068,8 @@ abstract class OutBitStream
   public abstract void Save( uword word );
 
   protected uword Word; // Bits are first stored in Word, when full, Word is saved.
-  protected const int WordSize = sizeof(uword);  // Size of Word in bytes.
 
-  protected const int WordCapacity = WordSize * 8; // Number of bits that can be stored in Word
+  protected const int WordCapacity = sizeof(uword) * 8; // Number of bits that can be stored in Word
   protected int BitsInWord; // Number of bits currently stored in Word.
    
 }
@@ -1079,7 +1078,7 @@ abstract class OutBitStream
 // ******************************************************************************
 
 
-sealed class MemoryBitStream : OutBitStream
+class MemoryBitStream : OutBitStream
 {
   // ByteSize returns the current size in bytes.
   // CopyTo copies the contents to a Stream.
@@ -1170,11 +1169,11 @@ sealed class MemoryBitStream : OutBitStream
     BytesInCurrentChunk = i;
   }
 
-  private int BytesInCurrentChunk; // Number of bytes stored in CurrentChunk.
-  private int CompleteChunks; // Number of complete Chunks.
-  private Chunk FirstChunk, CurrentChunk;
+  protected int BytesInCurrentChunk;
+  protected int CompleteChunks;
+  protected Chunk FirstChunk, CurrentChunk;
 
-  private class Chunk
+  protected class Chunk
   {
     public const int Capacity = 0x800;
     public byte [] Bytes = new byte[ Capacity ];
