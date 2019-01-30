@@ -245,7 +245,7 @@ sealed class Deflator
           bestMatch = match;
           bestDistance = position - oldPosition;
           if ( bestMatch == avail ) break;
-          if ( ! MatchPossible( position, bestMatch+1 ) ) break;
+          if ( ! MatchPossible( position, bestMatch + 1 ) ) break;
         }
       }
       oldPosition = link[ oldPosition ];
@@ -262,7 +262,7 @@ sealed class Deflator
   private bool MatchPossible( int position, int matchLength )
   {
     int end = position + matchLength - 3;
-    uint hash = ( (uint)Input[ end+0 ] << HashShift ) + Input[ end+1 ];
+    uint hash = ( (uint)Input[ end + 0 ] << HashShift ) + Input[ end + 1 ];
     hash = ( ( hash << HashShift ) + Input[ end + 2 ] ) & HashMask;        
     int hashEntry = HashTable[ hash ];
     return end < hashEntry;
@@ -744,8 +744,9 @@ struct HuffmanCoding // Variable length coding.
     {
       int used = Used[ i ];
       if ( used > 0 )
-        heap.Insert( ( (ulong)used << ( IdBits + DepthBits ) ) | i );
+        heap.Add( ( (ulong)used << ( IdBits + DepthBits ) ) | i );
     }
+    heap.Make();
 
     int maxBits = 0;
 
@@ -865,9 +866,11 @@ struct HuffmanCoding // Variable length coding.
     {
       if ( Used[ i ] != 0 ) 
       {
-        heap.Insert( (ulong)Used[ i ] << IdBits | i );
+        heap.Add( (ulong)Used[ i ] << IdBits | i );
       }
     }
+    heap.Make();
+
     int n = heap.Count; 
     ulong [] sorted = new ulong[ n ];
     for ( int i = 0; i < n; i += 1 ) sorted[ i ] = heap.Remove();
@@ -979,7 +982,7 @@ struct UlongHeap // An array organised so the smallest element can be efficientl
     int j = 0;
     while ( true )
     {
-      int c = ( j + j ) + 1; if ( c >= _Count ) break;
+      int c = j + j + 1; if ( c >= _Count ) break;
       ulong ce = Array[ c ];
       if ( c + 1 < _Count )
       {
@@ -991,6 +994,51 @@ struct UlongHeap // An array organised so the smallest element can be efficientl
     }
     Array[ j ] = e;
     return result;
+  }
+
+  // Add and Make allow the heap to be initialised faster ( in theory at least ).
+
+  public void Add( ulong e )
+  {
+    Array[ _Count++ ] = e;
+  }
+
+  /* Diagram showing numbering of tree elements.
+           0
+       1       2
+     3   4   5   6
+  */
+
+  public void Make()
+  {
+    // Initialise the heap by making every child less than it's parent.
+    int p = ( _Count - 2 ) / 2; // parent of last element.
+    while ( p >= 0 )
+    {
+      // bubble p down.
+      int j = p;
+      ulong e = Array[ j ];
+      while ( true )
+      {
+        int c = j + j + 1;
+        if ( c >= _Count ) break;
+        ulong ce = Array[ c ];
+        if ( c + 1 < _Count )
+        {
+          ulong ce2 = Array[ c + 1 ];
+          if ( ce2 < ce )
+          {
+            c += 1;
+            ce = ce2;
+          }
+        }
+        if ( e < ce ) break;
+        Array[ j ] = ce;
+        j = c;
+      }
+      Array[ j ] = e;
+      p -= 1;   
+    }
   }
 
 } // end struct UlongHeap
