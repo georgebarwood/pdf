@@ -259,7 +259,7 @@ sealed class Deflator
 
     while ( true )
     { 
-      if ( keyByte == input[ oldPosition + bestMatch ] )
+      if ( input[ oldPosition + bestMatch ] == keyByte )
       {
         int match = 0; 
         while ( match < avail && input[ position + match ] == input[ oldPosition + match ] ) 
