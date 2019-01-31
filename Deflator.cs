@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Monitor = System.Threading.Monitor;
 using ThreadPool = System.Threading.ThreadPool;
+using Thread = System.Threading.Thread;
 
 #if x32
 using uword = System.UInt32;
@@ -335,6 +336,7 @@ sealed class Deflator
       BufferFull = false;
     }
 
+    Thread.MemoryBarrier();
     BufferWrite = i;
     position += length;
     Buffered = position;
@@ -657,6 +659,8 @@ sealed class Deflator
         output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
         position += 1;
       }  
+
+      Thread.MemoryBarrier();
 
       d.BufferRead = bufferRead;
       d.Finished = position;
