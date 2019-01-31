@@ -98,13 +98,12 @@ sealed class Deflator
     else
     {
       Buffered = Input.Length;
-      MatchingComplete = true;
     }
     while ( !OutputBlock() )
     {
       if ( LZ77 ) lock( this ) 
       { 
-        if ( BufferFull) Monitor.Pulse( this ); 
+        if ( BufferFull ) Monitor.Pulse( this ); 
       }
     }
     if ( RFC1950 )
@@ -147,7 +146,6 @@ sealed class Deflator
   private int [] HashTable;
 
   // Inter-thread signalling fields.
-  private bool MatchingComplete = false;
   private bool BufferFull = false;
   private bool InputWait = false;
   private int InputRequest;
@@ -244,6 +242,13 @@ sealed class Deflator
     }
 
     HashTable = null; // To potentially free up memory.
+
+    lock( this )
+    {
+      Buffered = Input.Length;
+      if ( InputWait ) Monitor.Pulse( this );
+    } 
+
   }
 
   // BestMatch finds the best match starting at position. 
@@ -310,12 +315,6 @@ sealed class Deflator
   {
     Deflator d = (Deflator) x;
     d.FindMatches();
-    lock( d )
-    {
-      d.Buffered = d.Input.Length;
-      d.MatchingComplete = true;
-      Monitor.Pulse( d );
-    } 
   }
 
   private int SaveMatch ( int position, int length, int distance )
@@ -339,6 +338,7 @@ sealed class Deflator
     Thread.MemoryBarrier();
     BufferWrite = i;
     position += length;
+    Thread.MemoryBarrier();
     Buffered = position;
 
     if ( InputWait && position >= InputRequest )
@@ -352,7 +352,7 @@ sealed class Deflator
     while ( true ) 
     lock( this )
     {
-      if ( MatchingComplete || BufferFull || Buffered >= request ) 
+      if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
         return Buffered;
       else
       {
@@ -370,7 +370,7 @@ sealed class Deflator
   
     if ( blockSize > StartBlockSize ) 
     {
-      blockSize = ( MatchingComplete && blockSize < StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
+      blockSize = ( Buffered == Input.Length && blockSize < StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
     }
 
     Block b = new Block( this, blockSize, null );
