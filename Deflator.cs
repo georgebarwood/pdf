@@ -370,7 +370,7 @@ sealed class Deflator
   
     if ( blockSize > StartBlockSize ) 
     {
-      blockSize = ( MatchingComplete && blockSize < StartBlockSize*2 ) ? blockSize >> 1 : StartBlockSize;
+      blockSize = ( MatchingComplete && blockSize < StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
     }
 
     Block b = new Block( this, blockSize, null );
@@ -409,8 +409,7 @@ sealed class Deflator
       b.GetBits();
     }
 
-    bool last; // Is lock needed here?
-    lock( this ) last = MatchingComplete && b.End == Buffered;
+    bool last = b.End == Input.Length;
 
     b.WriteBlock( this, last );  
 
