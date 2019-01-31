@@ -1,4 +1,7 @@
 using System.Collections.Generic;
+using Monitor = System.Threading.Monitor;
+using ThreadPool = System.Threading.ThreadPool;
+
 #if x32
 using uword = System.UInt32;
 #else
@@ -7,8 +10,6 @@ using uword = System.UInt64;
 
 namespace Pdf {
 
-// ToDo : investigate using parallel processsing pipeline.
-// Say : one thread to find matches, one ( or two? ) to compute block lengths, another to output blocks.
 
 /* RFC 1951 compression ( https://www.ietf.org/rfc/rfc1951.txt ) aims to compress a stream of bytes using :
 
@@ -31,13 +32,16 @@ namespace Pdf {
 
    Only dynamic huffman blocks are used, no attempt is made to use Fixed or Copy blocks.
 
+   A second thread is used to perform the LZ77 compression, to allow the Huffman coding and LZ77 
+   comrpression to be done in parallel.
+
    Deflator ( this code) typically achieves better compression than ZLib 
    ( http://www.componentace.com/zlib_.NET.htm  via https://zlib.net/ ) 
-   and takes a little longer ( default options, after warmup ).
+   and while compressing at a similar speed( default options, after warmup ).
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
-   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,660 bytes 
-   in 27 milliseconds.
+   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,666 bytes 
+   in the same time.
 
    Sample usage:
 
@@ -67,9 +71,9 @@ sealed class Deflator
   // Options : to amend these use new Deflator( input, output ) and set before calling Go().
   // Possible "fast" setting : StartBlockSize = 0x4000, LazyMatch = false, DynamicBlockSize = false.
   public int StartBlockSize = 0x1000; // Increase to go faster ( with less compression ), reduce to try for more compression.
-  public int MaxBufferSize = 0x2000; // Must be power of 2, increase to try for slightly more compression on large inputs.
+  public int MaxBufferSize = 0x8000; // Must be power of 2.
 
-  // Compression options - set false to go faster.
+  // Compression options - set false to go faster, with less compression.
   public bool LZ77 = true;
   public bool LazyMatch = true;
   public bool DynamicBlockSize = true; 
@@ -86,9 +90,22 @@ sealed class Deflator
   public void Go()
   {
     if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
-    if ( LZ77 ) FindMatches( Input );
-    Buffered = Input.Length;
-    while ( !OutputBlock( true ) );
+    if ( LZ77 ) 
+    {
+      ThreadPool.QueueUserWorkItem( FindMatchesStart, this );
+    } 
+    else
+    {
+      Buffered = Input.Length;
+      MatchingComplete = true;
+    }
+    while ( !OutputBlock() )
+    {
+      if ( LZ77 ) lock( this ) 
+      { 
+        if ( BufferFull) Monitor.Pulse( this ); 
+      }
+    }
     if ( RFC1950 )
     { 
       Output.Pad( 8 );
@@ -123,10 +140,16 @@ sealed class Deflator
   private int BufferMask;
   private int BufferWrite, BufferRead; // Indexes for writing and reading.
 
-  // LZ77 hash table ( for MatchPossible function )
+  // LZ77 hash table ( for MatchPossible function ).
   private int HashShift;
   private uint HashMask;
   private int [] HashTable;
+
+  // Inter-thread signalling fields.
+  private bool MatchingComplete = false;
+  private bool BufferFull = false;
+  private bool InputWait = false;
+  private int InputRequest;
 
   // Private functions and classes.
 
@@ -139,8 +162,9 @@ sealed class Deflator
     return result;
   }
 
-  private void FindMatches( byte [] input ) // LZ77 compression.
+  private void FindMatches() // LZ77 compression.
   {
+    byte [] input = Input;
     if ( input.Length < MinMatch ) return;
 
     int bufferSize = CalcBufferSize( input.Length / 3, MaxBufferSize );
@@ -281,29 +305,70 @@ sealed class Deflator
     return result;
   } 
 
+  private static void FindMatchesStart( System.Object x )
+  {
+    Deflator d = (Deflator) x;
+    d.FindMatches();
+    lock( d )
+    {
+      d.Buffered = d.Input.Length;
+      d.MatchingComplete = true;
+      Monitor.Pulse( d );
+    } 
+  }
+
   private int SaveMatch ( int position, int length, int distance )
   // Called from FindMatches to save a <length,distance> match. Returns position + length.
   {
-    // System.Console.WriteLine( "SaveMatch postion=" + position + " length=" + length + " distance=" + distance );
     int i = BufferWrite;
     PositionBuffer[ i ] = position;
     LengthBuffer[ i ] = (byte) (length - MinMatch);
     DistanceBuffer[ i ] = (ushort) distance;
     i = ( i + 1 ) & BufferMask;
-    if ( i == BufferRead ) OutputBlock( false );
+
+    while ( i == BufferRead )
+    lock ( this )
+    {
+      BufferFull = true;
+      if ( InputWait ) Monitor.Pulse( this );
+      Monitor.Wait( this );
+      BufferFull = false;
+    }
+
     BufferWrite = i;
     position += length;
     Buffered = position;
+
+    if ( InputWait && position >= InputRequest )
+      lock ( this ) Monitor.Pulse( this );
+
     return position;
   }
 
-  private bool OutputBlock( bool last )
+  private int WaitForInput( int request )
   {
-    int blockSize = Buffered - Finished; // Uncompressed size in bytes.
-    
+    while ( true ) 
+    lock( this )
+    {
+      if ( MatchingComplete || BufferFull || Buffered >= request ) 
+        return Buffered;
+      else
+      {
+        InputRequest = request;
+        InputWait = true;
+        Monitor.Wait( this );
+        InputWait = false;
+      }
+    }
+  }
+
+  private bool OutputBlock()
+  {
+    int blockSize = WaitForInput( Finished + StartBlockSize ) - Finished;
+  
     if ( blockSize > StartBlockSize ) 
     {
-      blockSize = ( last && blockSize < StartBlockSize*2 ) ? blockSize >> 1 : StartBlockSize;
+      blockSize = ( MatchingComplete && blockSize < StartBlockSize*2 ) ? blockSize >> 1 : StartBlockSize;
     }
 
     Block b = new Block( this, blockSize, null );
@@ -311,8 +376,12 @@ sealed class Deflator
     int tunedBlockSize = blockSize;
 
     // Investigate larger block size.
-    while ( b.End < Buffered && DynamicBlockSize ) 
+    while ( DynamicBlockSize ) 
     {
+      int avail = WaitForInput( b.End + blockSize );
+
+      if ( b.End + blockSize > avail ) break;
+
       // b2 is a block which starts just after b.
       Block b2 = new Block( this, blockSize, b );
 
@@ -338,9 +407,11 @@ sealed class Deflator
       b.GetBits();
     }
 
-    // Output the block.
-    if ( b.End < Buffered ) last = false;
+    bool last; // Is lock needed here?
+    lock( this ) last = MatchingComplete && b.End == Buffered;
+
     b.WriteBlock( this, last );  
+
     return last;
   }
 
