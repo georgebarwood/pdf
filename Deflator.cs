@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using Generic = System.Collections.Generic;
 using Monitor = System.Threading.Monitor;
 using ThreadPool = System.Threading.ThreadPool;
 using Thread = System.Threading.Thread;
@@ -696,7 +696,7 @@ sealed class Deflator
         int length = lengths[ i ];
         if ( length == 0 )
         { 
-          if ( Repeat != 0 ) EncodeRepeat(); 
+          if ( Repeat > 0 ) EncodeRepeat(); 
           ZeroRun += 1; 
           PreviousLength = 0; 
         }
@@ -804,7 +804,7 @@ struct HuffmanCoding // Variable length coding.
     return result;
   }
 
-  public void ComputeCodes()
+  public void ComputeCodes() // Compute Bits and Codes from Used.
   {
     // Tree nodes are encoded in a ulong using 16 bits for the id, 8 bits for the tree depth, 32 bits for Used.
     const int IdBits = 16, DepthBits = 8, UsedBits = 32;
@@ -820,12 +820,12 @@ struct HuffmanCoding // Variable length coding.
     {
       int used = Used[ i ];
       if ( used > 0 )
-        heap.Add( ( (ulong)used << ( IdBits + DepthBits ) ) | i );
+        heap.Add( (ulong)used << ( IdBits + DepthBits ) | i );
     }
     heap.Make();
 
-    int maxBits = 0;
     int nonZero = heap.Count;
+    int maxBits = 0;
 
     if ( heap.Count == 1 )
     { 
@@ -850,12 +850,12 @@ struct HuffmanCoding // Variable length coding.
         // New node depth is 1 + larger of depthLeft and depthRight.
         uint depth = ( depthLeft > depthRight ? depthLeft : depthRight ) + DepthOne;
 
-        heap.Insert( ( ( left + right ) & UsedMask ) | depth | treeNode );
+        heap.Insert( ( left + right ) & UsedMask | depth | treeNode );
 
         treeNode += 1;
       }  while ( heap.Count > 1 );
       
-      uint root = ( (uint) heap.Remove() ) & ( DepthMask | IdMask );
+      uint root = (uint) heap.Remove() & ( DepthMask | IdMask );
       maxBits = (int)( root >> IdBits );
       if ( maxBits <= Limit )
         GetBits( (ushort)root, 0 );
@@ -924,8 +924,8 @@ struct HuffmanCoding // Variable length coding.
     return result; 
   } 
 
-  // PackageMerge is used if the Limit code length limit is exceeded.
-  // The result is technically not a Huffman code in this case ( due to the imposed limit ).
+  // PackageMerge is used if the Limit is exceeded.
+  // The result is technically not a Huffman code in this case.
   // See https://en.wikipedia.org/wiki/Package-merge_algorithm for a description of the algorithm.
 
   private void PackageMerge( int usedNonZero )
@@ -952,8 +952,8 @@ struct HuffmanCoding // Variable length coding.
     // Sort is complete.
 
     // List class is from System.Collections.Generic.
-    List<ulong> merged = new List<ulong>( Count ), 
-                next = new List<ulong>( Count );
+    Generic.List<ulong> merged = new Generic.List<ulong>( Count ), 
+                next = new Generic.List<ulong>( Count );
 
     uint package = (uint) Count; // Allocator for package ids.
 
@@ -998,7 +998,7 @@ struct HuffmanCoding // Variable length coding.
       }
 
       // Swap merged and next.
-      List<ulong> tmp = merged; merged = next; next = tmp;
+      Generic.List<ulong> tmp = merged; merged = next; next = tmp;
     }
 
     for ( int i = 0; i < merged.Count; i += 1 )
