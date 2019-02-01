@@ -34,11 +34,11 @@ namespace Pdf {
    Only dynamic huffman blocks are used, no attempt is made to use Fixed or Copy blocks.
 
    A second thread is used to perform the LZ77 compression, to allow the Huffman coding and LZ77 
-   comrpression to be done in parallel.
+   compression to be done in parallel.
 
    Deflator ( this code) typically achieves better compression than ZLib 
    ( http://www.componentace.com/zlib_.NET.htm  via https://zlib.net/ ) 
-   and while compressing at a similar speed( default options, after warmup ).
+   while compressing at a similar speed ( default options, after warmup ).
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
    is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,666 bytes 
