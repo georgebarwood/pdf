@@ -1140,7 +1140,7 @@ abstract class OutBitStream
     if ( w > 0 ) WriteBits( n - w, 0 );
   }
 
-  public abstract void Save( uword word );
+  protected abstract void Save( uword word );
 
   protected const int WordCapacity = sizeof(uword) * 8; // Number of bits that can be stored in Word
   protected uword Word; // Bits are first stored in Word, when full, Word is saved.
@@ -1212,7 +1212,7 @@ class MemoryBitStream : OutBitStream
     CurrentChunk = FirstChunk;
   }
 
-  public override void Save( uword w )
+  protected override void Save( uword w )
   {
     if ( BytesInCurrentChunk == Chunk.Capacity )
     {
