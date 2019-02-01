@@ -81,6 +81,7 @@ sealed class Deflator
   public bool TuneBlockSize = true;
 
   public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
+  public bool MultiThread = true; // Set false to disable multi-threading.
 
   public Deflator( byte [] input, OutBitStream output )
   { 
@@ -91,15 +92,31 @@ sealed class Deflator
   public void Go()
   {
     if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
-    if ( LZ77 && Input.Length >= MinMatch ) 
+
+    if ( LZ77 & Input.Length >= MinMatch )
     {
-      ThreadPool.QueueUserWorkItem( FindMatchesStart, this );
-    } 
+      if ( MultiThread && Input.Length > StartBlockSize )
+      {
+        ThreadPool.QueueUserWorkItem( FindMatchesStart, this );
+      }
+      else
+      {
+        FindMatches();
+      }
+    }
     else
     {
       Buffered = Input.Length;
     }
-    OutputBlocks();
+
+    bool lastBlock;
+    do
+    {
+      Block b = GetBlock();
+      lastBlock = b.End == Input.Length;
+      b.WriteBlock( this, lastBlock );  
+    } while ( !lastBlock );
+
     if ( RFC1950 )
     { 
       Output.Pad( 8 );
@@ -157,7 +174,7 @@ sealed class Deflator
   {
     byte [] input = Input;
 
-    int bufferSize = CalcBufferSize( Input.Length / 3, MaxBufferSize );
+    int bufferSize = CalcBufferSize( input.Length / 3, MaxBufferSize );
     PositionBuffer = new int[ bufferSize ];
     LengthBuffer   = new byte[ bufferSize ];
     DistanceBuffer = new ushort[ bufferSize ];   
@@ -349,60 +366,52 @@ sealed class Deflator
     }
   }
 
-  // End inter-thread function.
-
-  private void OutputBlocks()
+  private Block GetBlock()
   {
-    bool last = false;
-    while ( !last )
+    int blockSize = WaitForInput( Finished + StartBlockSize ) - Finished;
+  
+    if ( blockSize > StartBlockSize ) 
     {
-      int blockSize = WaitForInput( Finished + StartBlockSize ) - Finished;
-    
-      if ( blockSize > StartBlockSize ) 
-      {
-        blockSize = ( Buffered == Input.Length && blockSize < StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
-      }
-
-      Block b = new Block( this, blockSize, null );
-      int bits = b.GetBits(); // Compressed size in bits.
-      int tunedBlockSize = blockSize;
-
-      // Investigate larger block size.
-      while ( DynamicBlockSize ) 
-      {
-        int avail = WaitForInput( b.End + blockSize );
-
-        if ( b.End + blockSize > avail ) break;
-
-        // b2 is a block which starts just after b.
-        Block b2 = new Block( this, blockSize, b );
-
-        // b3 covers b and b2 exactly as one block.
-        Block b3 = new Block( this, b2.End - b.Start, null );
-        
-        int bits2 = b2.GetBits();
-        int bits3 = b3.GetBits(); 
-
-        int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out tunedBlockSize ) : 0;
-
-        if ( bits3 > bits + bits2 + delta ) break;
-
-        bits = bits3;
-        b = b3;
-        blockSize += blockSize; 
-        tunedBlockSize = blockSize;
-      }      
-
-      if ( tunedBlockSize > blockSize )
-      {
-        b = new Block( this, tunedBlockSize, null ); 
-        b.GetBits();
-      }
-
-      last = b.End == Input.Length;
-
-      b.WriteBlock( this, last );  
+      blockSize = ( Buffered == Input.Length && blockSize < StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
     }
+
+    Block b = new Block( this, blockSize, null );
+    int bits = b.GetBits(); // Compressed size in bits.
+    int tunedBlockSize = blockSize;
+
+    // Investigate larger block size.
+    while ( DynamicBlockSize ) 
+    {
+      int avail = WaitForInput( b.End + blockSize );
+
+      if ( b.End + blockSize > avail ) break;
+
+      // b2 is a block which starts just after b.
+      Block b2 = new Block( this, blockSize, b );
+
+      // b3 covers b and b2 exactly as one block.
+      Block b3 = new Block( this, b2.End - b.Start, null );
+      
+      int bits2 = b2.GetBits();
+      int bits3 = b3.GetBits(); 
+
+      int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out tunedBlockSize ) : 0;
+
+      if ( bits3 > bits + bits2 + delta ) break;
+
+      bits = bits3;
+      b = b3;
+      blockSize += blockSize; 
+      tunedBlockSize = blockSize;
+    }      
+
+    if ( tunedBlockSize > blockSize )
+    {
+      b = new Block( this, tunedBlockSize, null ); 
+      b.GetBits();
+    }
+
+    return b;
   }
 
   private static int CalcBufferSize( int n, int max )
