@@ -300,10 +300,13 @@ sealed class Deflator
     while ( i == BufferRead )
     lock ( BufferLock )
     {
-      BufferFull = true;
-      if ( InputWait ) Monitor.Pulse( BufferLock );
-      Monitor.Wait( BufferLock );
-      BufferFull = false;
+      if ( i == BufferRead ) 
+      {
+        BufferFull = true;
+        if ( InputWait ) Monitor.Pulse( BufferLock );
+        Monitor.Wait( BufferLock );
+        BufferFull = false;
+      }
     }
 
     Thread.MemoryBarrier();
