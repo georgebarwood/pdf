@@ -275,7 +275,7 @@ sealed class Deflator
         {
           bestMatch = match;
           bestDistance = position - oldPosition;
-          if ( bestMatch == avail || ! MatchPossible( position, bestMatch + 1 ) ) break;
+          if ( bestMatch == avail || ! MatchPossible( position, bestMatch ) ) break;
           keyByte = input[ position + bestMatch ];
         }
       }
@@ -289,13 +289,12 @@ sealed class Deflator
   // MatchPossible is used to try and shorten the BestMatch search by checking whether 
   // there is a hash entry for the last 3 bytes of the next longest possible match.
 
-  private bool MatchPossible( int position, int matchLength )
+  private bool MatchPossible( int position, int bestMatch )
   {
-    int end = position + matchLength - 3;
-    uint hash = ( (uint)Input[ end + 0 ] << HashShift ) + Input[ end + 1 ];
-    hash = ( ( hash << HashShift ) + Input[ end + 2 ] ) & HashMask;        
-    int hashEntry = HashTable[ hash ];
-    return end < hashEntry;
+    position += bestMatch - 2;
+    uint hash = ( (uint)Input[ position ] << HashShift ) + Input[ position + 1 ];
+    hash = ( ( hash << HashShift ) + Input[ position + 2 ] ) & HashMask;        
+    return position < HashTable[ hash ];
   }
 
   private static int CalcHashShift( int n )
