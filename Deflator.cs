@@ -91,7 +91,7 @@ sealed class Deflator
   public void Go()
   {
     if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
-    if ( LZ77 ) 
+    if ( LZ77 && Input.Length >= MinMatch ) 
     {
       ThreadPool.QueueUserWorkItem( FindMatchesStart, this );
     } 
@@ -99,13 +99,7 @@ sealed class Deflator
     {
       Buffered = Input.Length;
     }
-    while ( !OutputBlock() )
-    {
-      if ( LZ77 ) lock( this ) 
-      { 
-        if ( BufferFull ) Monitor.Pulse( this ); 
-      }
-    }
+    OutputBlocks();
     if ( RFC1950 )
     { 
       Output.Pad( 8 );
@@ -140,33 +134,30 @@ sealed class Deflator
   private int BufferMask;
   private int BufferWrite, BufferRead; // Indexes for writing and reading.
 
+  // Inter-thread signalling fields.
+  private readonly System.Object BufferLock = new System.Object();
+  private bool BufferFull = false;
+  private bool InputWait = false;
+  private int InputRequest;
+
   // LZ77 hash table ( for MatchPossible function ).
   private int HashShift;
   private uint HashMask;
   private int [] HashTable;
 
-  // Inter-thread signalling fields.
-  private bool BufferFull = false;
-  private bool InputWait = false;
-  private int InputRequest;
-
   // Private functions and classes.
 
-  private static int CalcBufferSize( int n, int max )
-  // Calculates a power of 2 >= n, but not more than max.
+  private static void FindMatchesStart( System.Object x )
   {
-    if ( n >= max ) return max;
-    int result = 1;
-    while ( result < n ) result = result << 1;
-    return result;
+    Deflator d = (Deflator) x;
+    d.FindMatches();
   }
 
   private void FindMatches() // LZ77 compression.
   {
     byte [] input = Input;
-    if ( input.Length < MinMatch ) return;
 
-    int bufferSize = CalcBufferSize( input.Length / 3, MaxBufferSize );
+    int bufferSize = CalcBufferSize( Input.Length / 3, MaxBufferSize );
     PositionBuffer = new int[ bufferSize ];
     LengthBuffer   = new byte[ bufferSize ];
     DistanceBuffer = new ushort[ bufferSize ];   
@@ -243,10 +234,10 @@ sealed class Deflator
 
     HashTable = null; // To potentially free up memory.
 
-    lock( this )
+    lock( BufferLock )
     {
       Buffered = Input.Length;
-      if ( InputWait ) Monitor.Pulse( this );
+      if ( InputWait ) Monitor.Pulse( BufferLock );
     } 
 
   }
@@ -297,6 +288,129 @@ sealed class Deflator
     return position < HashTable[ hash ];
   }
 
+  private int SaveMatch ( int position, int length, int distance )
+  // Called from FindMatches to save a <length,distance> match. Returns position + length.
+  {
+    int i = BufferWrite;
+    PositionBuffer[ i ] = position;
+    LengthBuffer[ i ] = (byte) ( length - MinMatch );
+    DistanceBuffer[ i ] = (ushort) distance;
+    i = ( i + 1 ) & BufferMask;
+
+    while ( i == BufferRead )
+    lock ( BufferLock )
+    {
+      BufferFull = true;
+      if ( InputWait ) Monitor.Pulse( BufferLock );
+      Monitor.Wait( BufferLock );
+      BufferFull = false;
+    }
+
+    Thread.MemoryBarrier();
+    BufferWrite = i;
+    position += length;
+    Thread.MemoryBarrier();
+    Buffered = position;
+
+    if ( InputWait && position >= InputRequest )
+      lock ( BufferLock ) Monitor.Pulse( BufferLock );
+
+    return position;
+  }
+
+  private void BlockWritten( int bufferEnd, int end )
+  {
+    Thread.MemoryBarrier();
+    BufferRead = bufferEnd;
+    Finished = end;
+    if ( LZ77 ) lock( BufferLock ) 
+    { 
+      if ( BufferFull ) Monitor.Pulse( BufferLock );
+    }
+  }
+
+  private int WaitForInput( int request )
+  {
+    while ( true ) 
+    lock( BufferLock )
+    {
+      if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
+        return Buffered;
+      else
+      {
+        InputRequest = request;
+        InputWait = true;
+        Monitor.Wait( BufferLock );
+        InputWait = false;
+      }
+    }
+  }
+
+  // End inter-thread function.
+
+  private void OutputBlocks()
+  {
+    bool last = false;
+    while ( !last )
+    {
+      int blockSize = WaitForInput( Finished + StartBlockSize ) - Finished;
+    
+      if ( blockSize > StartBlockSize ) 
+      {
+        blockSize = ( Buffered == Input.Length && blockSize < StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
+      }
+
+      Block b = new Block( this, blockSize, null );
+      int bits = b.GetBits(); // Compressed size in bits.
+      int tunedBlockSize = blockSize;
+
+      // Investigate larger block size.
+      while ( DynamicBlockSize ) 
+      {
+        int avail = WaitForInput( b.End + blockSize );
+
+        if ( b.End + blockSize > avail ) break;
+
+        // b2 is a block which starts just after b.
+        Block b2 = new Block( this, blockSize, b );
+
+        // b3 covers b and b2 exactly as one block.
+        Block b3 = new Block( this, b2.End - b.Start, null );
+        
+        int bits2 = b2.GetBits();
+        int bits3 = b3.GetBits(); 
+
+        int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out tunedBlockSize ) : 0;
+
+        if ( bits3 > bits + bits2 + delta ) break;
+
+        bits = bits3;
+        b = b3;
+        blockSize += blockSize; 
+        tunedBlockSize = blockSize;
+      }      
+
+      if ( tunedBlockSize > blockSize )
+      {
+        b = new Block( this, tunedBlockSize, null ); 
+        b.GetBits();
+      }
+
+      last = b.End == Input.Length;
+
+      b.WriteBlock( this, last );  
+    }
+  }
+
+  private static int CalcBufferSize( int n, int max )
+  // Calculates a power of 2 >= n, but not more than max.
+  {
+    if ( n >= max ) return max;
+    int result = 1;
+    while ( result < n ) result = result << 1;
+    return result;
+  }
+
   private static int CalcHashShift( int n )
   {
     int p = 1;
@@ -309,111 +423,6 @@ sealed class Deflator
     }
     return result;
   } 
-
-  private static void FindMatchesStart( System.Object x )
-  {
-    Deflator d = (Deflator) x;
-    d.FindMatches();
-  }
-
-  private int SaveMatch ( int position, int length, int distance )
-  // Called from FindMatches to save a <length,distance> match. Returns position + length.
-  {
-    int i = BufferWrite;
-    PositionBuffer[ i ] = position;
-    LengthBuffer[ i ] = (byte) ( length - MinMatch );
-    DistanceBuffer[ i ] = (ushort) distance;
-    i = ( i + 1 ) & BufferMask;
-
-    while ( i == BufferRead )
-    lock ( this )
-    {
-      BufferFull = true;
-      if ( InputWait ) Monitor.Pulse( this );
-      Monitor.Wait( this );
-      BufferFull = false;
-    }
-
-    Thread.MemoryBarrier();
-    BufferWrite = i;
-    position += length;
-    Thread.MemoryBarrier();
-    Buffered = position;
-
-    if ( InputWait && position >= InputRequest )
-      lock ( this ) Monitor.Pulse( this );
-
-    return position;
-  }
-
-  private int WaitForInput( int request )
-  {
-    while ( true ) 
-    lock( this )
-    {
-      if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
-        return Buffered;
-      else
-      {
-        InputRequest = request;
-        InputWait = true;
-        Monitor.Wait( this );
-        InputWait = false;
-      }
-    }
-  }
-
-  private bool OutputBlock()
-  {
-    int blockSize = WaitForInput( Finished + StartBlockSize ) - Finished;
-  
-    if ( blockSize > StartBlockSize ) 
-    {
-      blockSize = ( Buffered == Input.Length && blockSize < StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
-    }
-
-    Block b = new Block( this, blockSize, null );
-    int bits = b.GetBits(); // Compressed size in bits.
-    int tunedBlockSize = blockSize;
-
-    // Investigate larger block size.
-    while ( DynamicBlockSize ) 
-    {
-      int avail = WaitForInput( b.End + blockSize );
-
-      if ( b.End + blockSize > avail ) break;
-
-      // b2 is a block which starts just after b.
-      Block b2 = new Block( this, blockSize, b );
-
-      // b3 covers b and b2 exactly as one block.
-      Block b3 = new Block( this, b2.End - b.Start, null );
-      
-      int bits2 = b2.GetBits();
-      int bits3 = b3.GetBits(); 
-
-      int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out tunedBlockSize ) : 0;
-
-      if ( bits3 > bits + bits2 + delta ) break;
-
-      bits = bits3;
-      b = b3;
-      blockSize += blockSize; 
-      tunedBlockSize = blockSize;
-    }      
-
-    if ( tunedBlockSize > blockSize )
-    {
-      b = new Block( this, tunedBlockSize, null ); 
-      b.GetBits();
-    }
-
-    bool last = b.End == Input.Length;
-
-    b.WriteBlock( this, last );  
-
-    return last;
-  }
 
   public static uint Adler32( byte [] b ) // Checksum function per RFC 1950.
   {
@@ -486,6 +495,8 @@ sealed class Deflator
       DoLengthPass( 2 );
       PutCodes( d );
       output.WriteBits( Lit.Bits[ 256 ], Lit.Codes[ 256 ] ); // End of block code
+
+      d.BlockWritten( BufferEnd, End );
     }
 
     // Block private fields and constants.
@@ -659,11 +670,6 @@ sealed class Deflator
         output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
         position += 1;
       }  
-
-      Thread.MemoryBarrier();
-
-      d.BufferRead = bufferRead;
-      d.Finished = position;
     }
 
     // Run length encoding of code lengths - RFC 1951, page 13.
