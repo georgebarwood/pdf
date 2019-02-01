@@ -321,7 +321,7 @@ sealed class Deflator
   {
     int i = BufferWrite;
     PositionBuffer[ i ] = position;
-    LengthBuffer[ i ] = (byte) (length - MinMatch);
+    LengthBuffer[ i ] = (byte) ( length - MinMatch );
     DistanceBuffer[ i ] = (ushort) distance;
     i = ( i + 1 ) & BufferMask;
 
@@ -450,7 +450,7 @@ sealed class Deflator
       int avail = d.Buffered - Start;
       if ( blockSize > avail ) blockSize = avail;
 
-      End = TallyFrequencies( d, blockSize );
+      End = TallyFrequencies( d, blockSize, out BufferEnd );
       Lit.Used[ 256 ] += 1; // End of block code.
     }
 
@@ -490,11 +490,14 @@ sealed class Deflator
 
     // Block private fields and constants.
 
-    private OutBitStream Output;
-    private int BufferStart, BufferEnd;
+    private readonly OutBitStream Output;
+    private readonly int BufferStart, BufferEnd;
 
     // Huffman codings : Lit = Literal or Match Code, Dist = Distance code, Len = Length code.
-    HuffmanCoding Lit = new HuffmanCoding(15,288), Dist = new HuffmanCoding(15,32), Len = new HuffmanCoding(7,19);
+    private HuffmanCoding 
+      Lit = new HuffmanCoding( 15, 288 ), 
+      Dist = new HuffmanCoding( 15, 32 ), 
+      Len = new HuffmanCoding( 7, 19 );
 
     // Counts for code length encoding.
     private int LengthPass, PreviousLength, ZeroRun, Repeat;
@@ -510,12 +513,12 @@ sealed class Deflator
 
     // Block private functions.
 
-    private int TallyFrequencies( Deflator d, int blockSize )
+    private int TallyFrequencies( Deflator d, int blockSize, out int bufferRead )
     {
       int position = Start;
       int end = position + blockSize;
 
-      int bufferRead = BufferStart;
+      bufferRead = BufferStart;
       while ( position < end && bufferRead != d.BufferWrite )
       {
         int matchPosition = d.PositionBuffer[ bufferRead ];
@@ -548,7 +551,6 @@ sealed class Deflator
         position += 1;
       }
  
-      BufferEnd = bufferRead;
       return position;
     }
 
@@ -646,7 +648,7 @@ sealed class Deflator
         int dc = 29; while ( distance < DistOff[ dc ] ) dc -= 1;
 
         output.WriteBits( Lit.Bits[ 257 + mc ], Lit.Codes[ 257 + mc ] );
-        output.WriteBits( MatchExtra[ mc ], (uint)(length-MatchOff[ mc ] ) );
+        output.WriteBits( MatchExtra[ mc ], (uint)( length - MatchOff[ mc ] ) );
         output.WriteBits( Dist.Bits[ dc ], Dist.Codes[ dc ] );
         output.WriteBits( DistExtra[ dc ], (uint)(distance-DistOff[ dc ] ) );    
       }
@@ -898,7 +900,7 @@ struct HuffmanCoding // Variable length coding.
   {
     if ( treeNode < Count ) // treeNode is a leaf.
     {
-      Bits[ treeNode ] = (byte)length;
+      Bits[ treeNode ] = (byte) length;
     }
     else 
     {
@@ -942,7 +944,7 @@ struct HuffmanCoding // Variable length coding.
     {
       if ( Used[ i ] != 0 ) 
       {
-        sorted[ j++ ] = (ulong)Used[ i ] << IdBits | i;
+        sorted[ j++ ] = (ulong) Used[ i ] << IdBits | i;
       }
     }
     System.Array.Sort( sorted );
@@ -1026,6 +1028,12 @@ struct UlongHeap // An array organised so the smallest element can be efficientl
   private int _Count;
   private ulong [] Array;
 
+  /* Diagram showing numbering of tree elements.
+           0
+       1       2
+     3   4   5   6
+  */
+
   public UlongHeap ( int capacity )
   {
     _Count = 0;
@@ -1068,18 +1076,12 @@ struct UlongHeap // An array organised so the smallest element can be efficientl
     return result;
   }
 
-  // Add and Make allow the heap to be initialised faster ( in theory at least ).
+  // Add and Make allow the heap to be initialised faster.
 
   public void Add( ulong e )
   {
     Array[ _Count++ ] = e;
   }
-
-  /* Diagram showing numbering of tree elements.
-           0
-       1       2
-     3   4   5   6
-  */
 
   public void Make()
   {
@@ -1141,7 +1143,7 @@ abstract class OutBitStream
 
   protected abstract void Save( uword word );
 
-  protected const int WordCapacity = sizeof(uword) * 8; // Number of bits that can be stored in Word
+  protected const int WordCapacity = sizeof( uword ) * 8; // Number of bits that can be stored in Word
   protected uword Word; // Bits are first stored in Word, when full, Word is saved.
   protected int BitsInWord; // Number of bits currently stored in Word.
  
