@@ -91,21 +91,21 @@ sealed class Deflator
 
   public void Go()
   {
-    if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
-
-    if ( LZ77 & Input.Length >= MinMatch )
+    if ( RFC1950 ) 
     {
-      if ( MultiThread && Input.Length > StartBlockSize )
-      {
-        ThreadPool.QueueUserWorkItem( FindMatchesStart, this );
-      }
-      else
-      {
-        FindMatches();
-      }
+      Output.WriteBits( 16, 0x9c78 );
+    }
+
+    if ( LZ77 && MultiThread && Input.Length > StartBlockSize * 2 )
+    {
+      ThreadPool.QueueUserWorkItem( FindMatchesStart, this );
     }
     else
     {
+      if ( LZ77 && Input.Length > MinMatch )
+      {
+        FindMatches();
+      }
       Buffered = Input.Length;
     }
 
@@ -168,6 +168,11 @@ sealed class Deflator
   {
     Deflator d = (Deflator) x;
     d.FindMatches();
+    lock( d.BufferLock )
+    {
+      d.Buffered = d.Input.Length;
+      if ( d.InputWait ) Monitor.Pulse( d.BufferLock );
+    } 
   }
 
   private void FindMatches() // LZ77 compression.
@@ -250,12 +255,6 @@ sealed class Deflator
     }
 
     HashTable = null; // To potentially free up memory.
-
-    lock( BufferLock )
-    {
-      Buffered = Input.Length;
-      if ( InputWait ) Monitor.Pulse( BufferLock );
-    } 
 
   }
 
@@ -372,7 +371,7 @@ sealed class Deflator
   
     if ( blockSize > StartBlockSize ) 
     {
-      blockSize = ( Buffered == Input.Length && blockSize < StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
+      blockSize = ( Buffered == Input.Length && blockSize <= StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
     }
 
     Block b = new Block( this, blockSize, null );
@@ -384,7 +383,9 @@ sealed class Deflator
     {
       int avail = WaitForInput( b.End + blockSize );
 
-      if ( b.End + blockSize > avail ) break;
+      if ( avail < b.End + blockSize ) blockSize = avail - b.End;
+
+      if ( blockSize == 0 ) break;       
 
       // b2 is a block which starts just after b.
       Block b2 = new Block( this, blockSize, b );
