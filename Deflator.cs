@@ -526,6 +526,8 @@ sealed class Deflator
 
     private int TallyFrequencies( Deflator d, int blockSize, out int bufferRead )
     {
+      // Counts how many times each symbol is used, also determines exact end of block.
+
       int position = Start;
       int end = position + blockSize;
 
@@ -578,11 +580,9 @@ sealed class Deflator
 
       int delta = 0, bestDelta = 0, bestPosition = position;
 
-      while ( position < end && bufferRead != d.BufferWrite )
+      while ( bufferRead < BufferEnd )
       {
         int matchPosition = d.PositionBuffer[ bufferRead ];
-
-        if ( matchPosition >= end ) break;
 
         int length = d.LengthBuffer[ bufferRead ] + MinMatch;
         int distance = d.DistanceBuffer[ bufferRead  ]; 
@@ -635,11 +635,9 @@ sealed class Deflator
       int position = Start;
       int bufferRead = BufferStart;
 
-      while ( position < End && bufferRead != d.BufferWrite )
+      while ( bufferRead < BufferEnd )
       {
         int matchPosition = d.PositionBuffer[ bufferRead ];
-
-        if ( matchPosition >= End ) break;
 
         int length = d.LengthBuffer[ bufferRead ] + MinMatch;
         int distance = d.DistanceBuffer[ bufferRead  ]; 
