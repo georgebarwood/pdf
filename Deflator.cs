@@ -468,9 +468,6 @@ sealed class Deflator
         BufferStart = previous.BufferEnd;
       }
 
-      int avail = d.Buffered - Start;
-      if ( blockSize > avail ) blockSize = avail;
-
       End = TallyFrequencies( d, blockSize, out BufferEnd );
       Lit.Used[ 256 ] += 1; // End of block code.
     }
