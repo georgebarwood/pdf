@@ -183,6 +183,10 @@ sealed class Deflator
 
   // private structs and classes
 
+
+  // ******************************************************************************
+
+
   private struct Matcher // Does LZ77 matching.
   {
     // Circular buffer for storing LZ77 matches
@@ -268,16 +272,16 @@ sealed class Deflator
     private readonly byte [] Input;
     private readonly bool LazyMatch;
 
+    // Hash table for rapidly locating input positions with a specific 3 bytes.
+    private readonly int HashShift;
+    private readonly uint HashMask;
+    private readonly int [] HashTable;
+
     // Inter-thread signalling fields.
     private readonly System.Object Locker;
     private bool BufferFull;
     private bool InputWait;
     private int InputRequest;
-
-    // LZ77 hash table ( for MatchPossible function ).
-    private int HashShift;
-    private uint HashMask;
-    private int [] HashTable;
 
     // Private functions.
 
@@ -289,25 +293,19 @@ sealed class Deflator
 
     private void FindMatches() // LZ77 compression.
     {
-      byte [] input = Input;
- 
-      int limit = input.Length - 2;
-      int [] link = new int[ limit ];
-
-      int hashShift = HashShift;
-      uint hashMask = HashMask;
-      int [] hashTable = HashTable;
+      int limit = Input.Length - 2;
+      int [] link = new int[ limit ]; // Could limit this to MaxDistance.
 
       int position = 0; // position in input.
 
       // hash will be hash of three bytes starting at position.
-      uint hash = ( (uint)input[ 0 ] << hashShift ) + input[ 1 ];
+      uint hash = ( (uint)Input[ 0 ] << HashShift ) + Input[ 1 ];
 
       while ( position < limit )
       {
-        hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;        
-        int hashEntry = hashTable[ hash ];
-        hashTable[ hash ] = position + EncodePosition;
+        hash = ( ( hash << HashShift ) + Input[ position + 2 ] ) & HashMask;        
+        int hashEntry = HashTable[ hash ];
+        HashTable[ hash ] = position + EncodePosition;
         if ( position >= hashEntry ) // Equivalent to position - ( hashEntry - EncodePosition ) > MaxDistance.
         {
            position += 1;
@@ -315,7 +313,7 @@ sealed class Deflator
         }
         link[ position ] = hashEntry;
 
-        int distance, match = BestMatch( input, position, out distance, hashEntry - EncodePosition, link );
+        int distance, match = BestMatch( position, out distance, hashEntry - EncodePosition, link );
         position += 1;
         if ( match < MinMatch ) continue;
 
@@ -324,15 +322,15 @@ sealed class Deflator
         // Since a range typically needs more bits to encode than a single literal, choose the latter.
         while ( position < limit ) 
         {
-          hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;          
-          hashEntry = hashTable[ hash ];
-          hashTable[ hash ] = position + EncodePosition;
+          hash = ( ( hash << HashShift ) + Input[ position + 2 ] ) & HashMask;          
+          hashEntry = HashTable[ hash ];
+          HashTable[ hash ] = position + EncodePosition;
           if ( position >= hashEntry ) break;
           link[ position ] = hashEntry;
 
           if ( !LazyMatch ) break;
 
-          int distance2, match2 = BestMatch( input, position, out distance2, hashEntry - EncodePosition, link );
+          int distance2, match2 = BestMatch( position, out distance2, hashEntry - EncodePosition, link );
           if ( match2 > match || match2 == match && distance2 < distance )
           {
             match = match2;
@@ -350,14 +348,12 @@ sealed class Deflator
         // Advance to end of copied section.
         while ( position < copyEnd )
         { 
-          hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;
-          link[ position ] = hashTable[ hash ];
-          hashTable[ hash ] = position + EncodePosition;
+          hash = ( ( hash << HashShift ) + Input[ position + 2 ] ) & HashMask;
+          link[ position ] = HashTable[ hash ];
+          HashTable[ hash ] = position + EncodePosition;
           position += 1;
         }
       }
-
-      HashTable = null; // To potentially free up memory.
 
       lock( Locker )
       {
@@ -370,20 +366,20 @@ sealed class Deflator
     // BestMatch finds the best match starting at position. 
     // oldPosition is from hash table, link [] is linked list of older positions.
 
-    private int BestMatch( byte [] input, int position, out int bestDistance, int oldPosition, int [] link )
+    private int BestMatch( int position, out int bestDistance, int oldPosition, int [] link )
     { 
-      int avail = input.Length - position;
+      int avail = Input.Length - position;
       if ( avail > MaxMatch ) avail = MaxMatch;
 
       int bestMatch = 0; bestDistance = 0;
-      byte keyByte = input[ position + bestMatch ];
+      byte keyByte = Input[ position + bestMatch ];
 
       while ( true )
       { 
-        if ( input[ oldPosition + bestMatch ] == keyByte )
+        if ( Input[ oldPosition + bestMatch ] == keyByte )
         {
           int match = 0; 
-          while ( match < avail && input[ position + match ] == input[ oldPosition + match ] ) 
+          while ( match < avail && Input[ position + match ] == Input[ oldPosition + match ] ) 
           {
             match += 1;
           }
@@ -392,7 +388,7 @@ sealed class Deflator
             bestMatch = match;
             bestDistance = position - oldPosition;
             if ( bestMatch == avail || ! MatchPossible( position, bestMatch ) ) break;
-            keyByte = input[ position + bestMatch ];
+            keyByte = Input[ position + bestMatch ];
           }
         }
         oldPosition = link[ oldPosition ];
@@ -471,6 +467,10 @@ sealed class Deflator
     } 
 
   } // end struct Matcher
+
+
+  // ******************************************************************************
+
 
   private class Block
   {
