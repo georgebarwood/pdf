@@ -378,7 +378,7 @@ sealed class Deflator
     }
 
     Block b = new Block( this, blockSize, null );
-    int bits = b.BitSize();
+    int bits = -1;
     int tunedBlockSize = blockSize;
 
     // Investigate larger block size.
@@ -396,6 +396,7 @@ sealed class Deflator
       // b3 covers b and b2 exactly as one block.
       Block b3 = new Block( this, b2.End - b.Start, null );
       
+      if ( bits < 0 ) bits = b.BitSize();
       int bits2 = b2.BitSize();
       int bits3 = b3.BitSize(); 
 
@@ -475,29 +476,70 @@ sealed class Deflator
       Lit.Used[ 256 ] += 1; // End of block code.
     }
 
-    private void ComputeCodes()
-    {
-      if ( CodesComputed ) return;      
-
-      Lit.ComputeCodes();
-      Dist.ComputeCodes();
-
-      if ( Dist.Count == 0 ) Dist.Count = 1;
-
-      // Compute length encoding.
-      DoLengthPass( 1 );
-      Len.ComputeCodes();
-
-      // The length codes are permuted before being stored ( so that # of trailing zeroes is likely to be more ).
-      Len.Count = 19; while ( Len.Count > 4 && Len.Bits[ ClenAlphabet[ Len.Count - 1 ] ] == 0 ) Len.Count -= 1;
-
-      CodesComputed = true;
-    }
-
     public int BitSize()
     { 
       ComputeCodes();
       return 17 + 3 * Len.Count + Len.Total() + Lit.Total() + Dist.Total();
+    }
+
+    public int TuneBoundary( Deflator d, Block prev, int howfar, out int blockSize )
+    {
+      // Investigate whether moving data into the previous block uses fewer bits,
+      // using the current encodings. If a symbol with no encoding in the 
+      // previous block is found, terminate the search ( goto EndSearch ).
+
+      int position = Start;
+      int bufferRead = BufferStart;
+      int end = position + howfar;
+      if ( end > End ) end = End;
+
+      int delta = 0, bestDelta = 0, bestPosition = position;
+
+      while ( bufferRead != BufferEnd )
+      {
+        int matchPosition = d.PositionBuffer[ bufferRead ];
+
+        int length = d.LengthBuffer[ bufferRead ] + MinMatch;
+        int distance = d.DistanceBuffer[ bufferRead  ]; 
+
+        bufferRead = ( bufferRead  + 1 ) & d.BufferMask;
+
+        while ( position < matchPosition ) 
+        {
+          byte b = d.Input[ position ];
+ 
+          if ( prev.Lit.Bits[ b ] == 0 ) goto EndSearch;
+          delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
+          if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
+          position += 1;
+        }  
+        position += length;
+
+        // Compute match and distance codes.
+        int mc = 0; while ( length >= MatchOff[ mc ] ) mc += 1; mc -= 1;
+        int dc = 29; while ( distance < DistOff[ dc ] ) dc -= 1;
+
+        if ( prev.Lit.Bits[ 257 + mc ] == 0 || prev.Dist.Bits[ dc ] == 0 ) goto EndSearch;
+        delta += prev.Lit.Bits[ 257 + mc ] - Lit.Bits[ 257 + mc  ];
+        delta += prev.Dist.Bits[ dc ] - Dist.Bits[ dc ];
+
+        if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
+        position += 1;
+      }
+
+      while ( position < end ) 
+      {
+        byte b = d.Input[ position ];
+        if ( prev.Lit.Bits[ b ] == 0 ) goto EndSearch;
+        delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
+        if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
+        position += 1;
+      }  
+
+      EndSearch:
+      
+      blockSize = bestPosition - prev.Start;
+      return bestDelta;
     }
 
     public void WriteBlock( Deflator d, bool last )
@@ -590,64 +632,23 @@ sealed class Deflator
       return position;
     }
 
-    public int TuneBoundary( Deflator d, Block prev, int howfar, out int blockSize )
+    private void ComputeCodes()
     {
-      // Investigate whether moving data into the previous block uses fewer bits,
-      // using the current encodings. If a symbol with no encoding in the 
-      // previous block is found, terminate the search ( goto EndSearch ).
+      if ( CodesComputed ) return;      
 
-      int position = Start;
-      int bufferRead = BufferStart;
-      int end = position + howfar;
-      if ( end > End ) end = End;
+      Lit.ComputeCodes();
+      Dist.ComputeCodes();
 
-      int delta = 0, bestDelta = 0, bestPosition = position;
+      if ( Dist.Count == 0 ) Dist.Count = 1;
 
-      while ( bufferRead != BufferEnd )
-      {
-        int matchPosition = d.PositionBuffer[ bufferRead ];
+      // Compute length encoding.
+      DoLengthPass( 1 );
+      Len.ComputeCodes();
 
-        int length = d.LengthBuffer[ bufferRead ] + MinMatch;
-        int distance = d.DistanceBuffer[ bufferRead  ]; 
+      // The length codes are permuted before being stored ( so that # of trailing zeroes is likely to be more ).
+      Len.Count = 19; while ( Len.Count > 4 && Len.Bits[ ClenAlphabet[ Len.Count - 1 ] ] == 0 ) Len.Count -= 1;
 
-        bufferRead = ( bufferRead  + 1 ) & d.BufferMask;
-
-        while ( position < matchPosition ) 
-        {
-          byte b = d.Input[ position ];
- 
-          if ( prev.Lit.Bits[ b ] == 0 ) goto EndSearch;
-          delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
-          if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
-          position += 1;
-        }  
-        position += length;
-
-        // Compute match and distance codes.
-        int mc = 0; while ( length >= MatchOff[ mc ] ) mc += 1; mc -= 1;
-        int dc = 29; while ( distance < DistOff[ dc ] ) dc -= 1;
-
-        if ( prev.Lit.Bits[ 257 + mc ] == 0 || prev.Dist.Bits[ dc ] == 0 ) goto EndSearch;
-        delta += prev.Lit.Bits[ 257 + mc ] - Lit.Bits[ 257 + mc  ];
-        delta += prev.Dist.Bits[ dc ] - Dist.Bits[ dc ];
-
-        if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
-        position += 1;
-      }
-
-      while ( position < end ) 
-      {
-        byte b = d.Input[ position ];
-        if ( prev.Lit.Bits[ b ] == 0 ) goto EndSearch;
-        delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
-        if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
-        position += 1;
-      }  
-
-      EndSearch:
-      
-      blockSize = bestPosition - prev.Start;
-      return bestDelta;
+      CodesComputed = true;
     }
 
     private void PutCodes( Deflator d )
