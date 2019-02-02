@@ -478,7 +478,7 @@ sealed class Deflator
 
     public Block( Deflator d, int blockSize, Block previous )
     // The block is not immediately output, to allow caller to try different block sizes.
-    // Instead, the number of bits neeed to encoded the block is returned by GetBits ( excluding "extra" bits ).
+    // Instead, the number of bits neeed to encoded the block is returned by BitSize() ( excluding "extra" bits ).
     {
       Output = d.Output;
 
