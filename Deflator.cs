@@ -304,9 +304,6 @@ sealed class Deflator
   private int SaveMatch ( int position, int length, int distance )
   // Called from FindMatches to save a <length,distance> match. Returns position + length.
   {
-    { for ( int j=0; j<length; j+=1 ) if ( Input[position+j] != Input[position-distance+j] ) throw new System.Exception(); }
-
-
     int i = BufferWrite;
     PositionBuffer[ i ] = position;
     LengthBuffer[ i ] = (byte) ( length - MinMatch );
@@ -474,8 +471,6 @@ sealed class Deflator
         Start = previous.End;
         BufferStart = previous.BufferEnd;
       }
-
-      if ( Start + blockSize > d.Buffered ) throw new System.Exception();
 
       End = TallyFrequencies( d, blockSize, out BufferEnd );
       Lit.Used[ 256 ] += 1; // End of block code.
