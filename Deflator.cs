@@ -40,7 +40,7 @@ namespace Pdf {
    while compressing at a similar speed ( default options, after warmup ).
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
-   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,666 bytes 
+   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,572 bytes 
    in the same time.
 
    Sample usage:
