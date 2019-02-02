@@ -134,7 +134,8 @@ sealed class Deflator
     int tunedBlockSize = blockSize;
 
     // Investigate larger block size.
-    while ( DynamicBlockSize ) 
+    if ( DynamicBlockSize )
+    while ( true ) 
     {
       if ( blockSize * 2 > MaxBlockSize ) break;
 
@@ -566,19 +567,19 @@ sealed class Deflator
     public void WriteBlock( Deflator d, bool last )
     {
       ComputeCodes();
-      OutBitStream output = Output;
-      output.WriteBits( 1, last ? 1u : 0u );
-      output.WriteBits( 2, 2 );
-      output.WriteBits( 5, (uint)( Lit.Count - 257 ) ); 
-      output.WriteBits( 5, (uint)( Dist.Count - 1 ) ); 
-      output.WriteBits( 4, (uint)( Len.Count - 4 ) );
+
+      Output.WriteBits( 1, last ? 1u : 0u );
+      Output.WriteBits( 2, 2 );
+      Output.WriteBits( 5, (uint)( Lit.Count - 257 ) ); 
+      Output.WriteBits( 5, (uint)( Dist.Count - 1 ) ); 
+      Output.WriteBits( 4, (uint)( Len.Count - 4 ) );
 
       for ( int i = 0; i < Len.Count; i += 1 ) 
-        output.WriteBits( 3, Len.Bits[ ClenAlphabet[ i ] ] );
+        Output.WriteBits( 3, Len.Bits[ ClenAlphabet[ i ] ] );
 
       DoLengthPass( 2 );
       PutCodes( d );
-      output.WriteBits( Lit.Bits[ 256 ], Lit.Codes[ 256 ] ); // End of block code
+      Output.WriteBits( Lit.Bits[ 256 ], Lit.Codes[ 256 ] ); // End of block code
 
       d.Finished = End;
       d.Match.Processed( BufferEnd );
@@ -675,9 +676,6 @@ sealed class Deflator
 
     private void PutCodes( Deflator d )
     {
-      byte [] input = d.Input;
-      OutBitStream output = d.Output;
-
       int position = Start;
       int bufferRead = BufferStart;
 
@@ -693,7 +691,7 @@ sealed class Deflator
         while ( position < matchPosition ) 
         {
           byte b = d.Input[ position ];
-          output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
+          Output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
           position += 1;
         }  
         position += length;
@@ -702,16 +700,16 @@ sealed class Deflator
         int mc = 0; while ( length >= MatchOff[ mc ] ) mc += 1; mc -= 1;
         int dc = 29; while ( distance < DistOff[ dc ] ) dc -= 1;
 
-        output.WriteBits( Lit.Bits[ 257 + mc ], Lit.Codes[ 257 + mc ] );
-        output.WriteBits( MatchExtra[ mc ], (uint)( length - MatchOff[ mc ] ) );
-        output.WriteBits( Dist.Bits[ dc ], Dist.Codes[ dc ] );
-        output.WriteBits( DistExtra[ dc ], (uint)(distance-DistOff[ dc ] ) );    
+        Output.WriteBits( Lit.Bits[ 257 + mc ], Lit.Codes[ 257 + mc ] );
+        Output.WriteBits( MatchExtra[ mc ], (uint)( length - MatchOff[ mc ] ) );
+        Output.WriteBits( Dist.Bits[ dc ], Dist.Codes[ dc ] );
+        Output.WriteBits( DistExtra[ dc ], (uint)(distance-DistOff[ dc ] ) );    
       }
 
       while ( position < End ) 
       {
-        byte b = input[ position ];
-        output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
+        byte b = d.Input[ position ];
+        Output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
         position += 1;
       }  
     }
