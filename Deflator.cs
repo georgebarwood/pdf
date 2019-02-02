@@ -90,19 +90,9 @@ sealed class Deflator
 
   public void Go()
   {
-    if ( RFC1950 ) 
-    {
-      Output.WriteBits( 16, 0x9c78 );
-    }
+    Match = new Matcher( this );
 
-    if ( LZ77 && Input.Length > MinMatch )
-    {
-      ThreadPool.QueueUserWorkItem( FindMatchesStart, this );
-    }
-    else
-    {
-      Buffered = Input.Length;
-    }
+    if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
 
     bool lastBlock;
     do
@@ -119,263 +109,25 @@ sealed class Deflator
     } 
   }
 
-  // Private constants.
-
-  // RFC 1951 match ( LZ77 ) limits.
-  private const int MinMatch = 3; // The smallest match eligible for LZ77 encoding.
-  private const int MaxMatch = 258; // The largest match eligible for LZ77 encoding.
-  private const int MaxDistance = 0x8000; // The largest distance backwards in input from current position that can be encoded.
-
-  // Instead of initialising LZ77 hashTable and link arrays to -(MaxDistance+1), EncodePosition 
-  // is added when storing a value and subtracted when retrieving a value.
-  // This means a default value of 0 will always be more distant than MaxDistance.
-  private const int EncodePosition = MaxDistance + 1;
-
   // Private fields.
 
   private readonly byte [] Input;
   private readonly OutBitStream Output;
+  private int Finished; // How many Input bytes have been encoded to Output.
+  private Matcher Match;
 
-  private int Buffered; // How many Input bytes have been processed to intermediate buffer.
-  private int Finished; // How many Input bytes have been written to Output.
-
-  // Intermediate circular buffer for storing LZ77 matches.
-  private int    [] PositionBuffer;
-  private byte   [] LengthBuffer;
-  private ushort [] DistanceBuffer;
-  private int BufferMask;
-  private int BufferWrite, BufferRead; // Indexes for writing and reading.
-
-  // Inter-thread signalling fields.
-  private readonly System.Object BufferLock = new System.Object();
-  private bool BufferFull = false;
-  private bool InputWait = false;
-  private int InputRequest;
-
-  // LZ77 hash table ( for MatchPossible function ).
-  private int HashShift;
-  private uint HashMask;
-  private int [] HashTable;
-
-  // Private functions and classes.
-
-  private static void FindMatchesStart( System.Object x )
-  {
-    Deflator d = (Deflator) x;
-    d.FindMatches();
-    lock( d.BufferLock )
-    {
-      d.Buffered = d.Input.Length;
-      if ( d.InputWait ) Monitor.Pulse( d.BufferLock );
-    } 
-  }
-
-  private void FindMatches() // LZ77 compression.
-  {
-    byte [] input = Input;
-
-    int bufferSize = CalcBufferSize( input.Length / 3, MaxBufferSize );
-    PositionBuffer = new int[ bufferSize ];
-    LengthBuffer   = new byte[ bufferSize ];
-    DistanceBuffer = new ushort[ bufferSize ];   
-    BufferMask = bufferSize - 1; 
-
-    int limit = input.Length - 2;
-
-    int hashShift = CalcHashShift( limit * 2 );
-    uint hashMask = ( 1u << ( MinMatch * hashShift ) ) - 1;
-
-    int [] hashTable = new int[ hashMask + 1 ];
-    int [] link = new int[ limit ];
-
-    HashShift = hashShift;
-    HashMask = hashMask;
-    HashTable = hashTable;
-
-    int position = 0; // position in input.
-
-    // hash will be hash of three bytes starting at position.
-    uint hash = ( (uint)input[ 0 ] << hashShift ) + input[ 1 ];
-
-    while ( position < limit )
-    {
-      hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;        
-      int hashEntry = hashTable[ hash ];
-      hashTable[ hash ] = position + EncodePosition;
-      if ( position >= hashEntry ) // Equivalent to position - ( hashEntry - EncodePosition ) > MaxDistance.
-      {
-         position += 1;
-         continue;
-      }
-      link[ position ] = hashEntry;
-
-      int distance, match = BestMatch( input, position, out distance, hashEntry - EncodePosition, link );
-      position += 1;
-      if ( match < MinMatch ) continue;
-
-      // "Lazy matching" RFC 1951 p.15 : if there are overlapping matches, there is a choice over which of the match to use.
-      // Example: "abc012bc345.... abc345". Here abc345 can be encoded as either [abc][345] or as a[bc345].
-      // Since a range typically needs more bits to encode than a single literal, choose the latter.
-      while ( position < limit ) 
-      {
-        hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;          
-        hashEntry = hashTable[ hash ];
-        hashTable[ hash ] = position + EncodePosition;
-        if ( position >= hashEntry ) break;
-        link[ position ] = hashEntry;
-
-        if ( !LazyMatch ) break;
-
-        int distance2, match2 = BestMatch( input, position, out distance2, hashEntry - EncodePosition, link );
-        if ( match2 > match || match2 == match && distance2 < distance )
-        {
-          match = match2;
-          distance = distance2;
-          position += 1;
-        }
-        else break;
-      }
-
-      int copyEnd = SaveMatch( position - 1, match, distance );
-      if ( copyEnd > limit ) copyEnd = limit;
-
-      position += 1;
-
-      // Advance to end of copied section.
-      while ( position < copyEnd )
-      { 
-        hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;
-        link[ position ] = hashTable[ hash ];
-        hashTable[ hash ] = position + EncodePosition;
-        position += 1;
-      }
-    }
-
-    HashTable = null; // To potentially free up memory.
-
-  }
-
-  // BestMatch finds the best match starting at position. 
-  // oldPosition is from hash table, link [] is linked list of older positions.
-
-  private int BestMatch( byte [] input, int position, out int bestDistance, int oldPosition, int [] link )
-  { 
-    int avail = input.Length - position;
-    if ( avail > MaxMatch ) avail = MaxMatch;
-
-    int bestMatch = 0; bestDistance = 0;
-    byte keyByte = input[ position + bestMatch ];
-
-    while ( true )
-    { 
-      if ( input[ oldPosition + bestMatch ] == keyByte )
-      {
-        int match = 0; 
-        while ( match < avail && input[ position + match ] == input[ oldPosition + match ] ) 
-        {
-          match += 1;
-        }
-        if ( match > bestMatch )
-        {
-          bestMatch = match;
-          bestDistance = position - oldPosition;
-          if ( bestMatch == avail || ! MatchPossible( position, bestMatch ) ) break;
-          keyByte = input[ position + bestMatch ];
-        }
-      }
-      oldPosition = link[ oldPosition ];
-      if ( position >= oldPosition ) break;
-      oldPosition -= EncodePosition;
-    }
-    return bestMatch;
-  }
-
-  // MatchPossible is used to try and shorten the BestMatch search by checking whether 
-  // there is a hash entry for the last 3 bytes of the next longest possible match.
-
-  private bool MatchPossible( int position, int bestMatch )
-  {
-    position += bestMatch - 2;
-    uint hash = ( (uint)Input[ position ] << HashShift ) + Input[ position + 1 ];
-    hash = ( ( hash << HashShift ) + Input[ position + 2 ] ) & HashMask;        
-    return position < HashTable[ hash ];
-  }
-
-  private int SaveMatch ( int position, int length, int distance )
-  // Called from FindMatches to save a <length,distance> match. Returns position + length.
-  {
-    int i = BufferWrite;
-    PositionBuffer[ i ] = position;
-    LengthBuffer[ i ] = (byte) ( length - MinMatch );
-    DistanceBuffer[ i ] = (ushort) distance;
-    i = ( i + 1 ) & BufferMask;
-
-    while ( i == BufferRead )
-    {
-      lock ( BufferLock )
-      {
-        if ( i == BufferRead ) 
-        {
-          BufferFull = true;
-          if ( InputWait ) Monitor.Pulse( BufferLock );
-          Monitor.Wait( BufferLock );
-          BufferFull = false;
-        }
-      }
-    }
-
-    Thread.MemoryBarrier();
-    BufferWrite = i;
-    position += length;
-    Thread.MemoryBarrier();
-    Buffered = position;
-
-    if ( InputWait && position >= InputRequest )
-      lock ( BufferLock ) Monitor.Pulse( BufferLock );
-
-    return position;
-  }
-
-  private void BlockWritten( int bufferEnd, int end )
-  {
-    Thread.MemoryBarrier();
-    BufferRead = bufferEnd;
-    Finished = end;
-    if ( LZ77 ) lock( BufferLock ) 
-    { 
-      if ( BufferFull ) Monitor.Pulse( BufferLock );
-    }
-  }
-
-  private int WaitForInput( int request )
-  {
-    while ( true ) 
-    {
-      lock( BufferLock )
-      {
-        if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
-          return Buffered;
-        else
-        {
-          InputRequest = request;
-          InputWait = true;
-          Monitor.Wait( BufferLock );
-          InputWait = false;
-        }
-      }
-    }
-  }
+  // Private functions.
 
   private Block GetBlock()
   {
     int startBlockSize = DynamicBlockSize ? StartBlockSize : FixedBlockSize;
 
-    int blockSize = WaitForInput( Finished + startBlockSize ) - Finished;
+    if ( Input.Length - Finished <= startBlockSize * 2 )
+      startBlockSize = Input.Length - Finished;
+   
+    int blockSize = Match.WaitForInput( Finished + startBlockSize ) - Finished;
   
-    if ( blockSize > startBlockSize ) 
-    {
-      blockSize = ( Buffered == Input.Length && blockSize <= startBlockSize * 2 ) ? blockSize : startBlockSize;
-    }
+    if ( blockSize > startBlockSize ) blockSize = startBlockSize;
 
     Block b = new Block( this, blockSize, null );
     int bits = -1;
@@ -386,7 +138,7 @@ sealed class Deflator
     {
       if ( blockSize * 2 > MaxBlockSize ) break;
 
-      int avail = WaitForInput( b.End + blockSize );
+      int avail = Match.WaitForInput( b.End + blockSize );
 
       if ( avail < b.End + blockSize ) break;
 
@@ -418,28 +170,6 @@ sealed class Deflator
     return b;
   }
 
-  private static int CalcBufferSize( int n, int max )
-  // Calculates a power of 2 >= n, but not more than max.
-  {
-    if ( n >= max ) return max;
-    int result = 1;
-    while ( result < n ) result = result << 1;
-    return result;
-  }
-
-  private static int CalcHashShift( int n )
-  {
-    int p = 1;
-    int result = 0;
-    while ( n > p ) 
-    {
-      p = p << MinMatch;
-      result += 1;
-      if ( result == 6 ) break;
-    }
-    return result;
-  } 
-
   public static uint Adler32( byte [] b ) // Checksum function per RFC 1950.
   {
     uint s1 = 1, s2 = 0;
@@ -450,6 +180,298 @@ sealed class Deflator
     }
     return s2 * 65536 + s1;    
   }
+
+  // private structs and classes
+
+  private struct Matcher // Does LZ77 matching.
+  {
+    // Circular buffer for storing LZ77 matches
+    public readonly int    [] PositionBuffer;
+    public readonly byte   [] LengthBuffer;
+    public readonly ushort [] DistanceBuffer;
+    public readonly int BufferMask;
+    public int BufferWrite, BufferRead; // Indexes for writing and reading the buffer.
+
+    // RFC 1951 match ( LZ77 ) limits.
+    public const int MinMatch = 3; // The smallest match eligible for LZ77 encoding.
+    public const int MaxMatch = 258; // The largest match eligible for LZ77 encoding.
+    public const int MaxDistance = 0x8000; // The largest distance backwards in input from current position that can be encoded.
+
+    public Matcher( Deflator d )
+    {
+      Input = d.Input;
+      Locker = new System.Object();
+      Buffered = 0;
+      
+      int bufferSize = CalcBufferSize( Input.Length / 3, d.MaxBufferSize );
+      PositionBuffer = new int[ bufferSize ];
+      LengthBuffer   = new byte[ bufferSize ];
+      DistanceBuffer = new ushort[ bufferSize ];   
+      BufferMask = bufferSize - 1;
+
+      BufferWrite = 0;
+      BufferRead = 0;
+      BufferFull = false;
+      InputWait = false;
+      InputRequest = 0;
+
+      LazyMatch = false;
+
+      HashShift = CalcHashShift( Input.Length * 2 );
+      HashMask = ( 1u << ( MinMatch * HashShift ) ) - 1;
+      HashTable = new int[ HashMask + 1 ];
+
+      if ( d.LZ77 && Input.Length > Matcher.MinMatch )
+        ThreadPool.QueueUserWorkItem( FindMatchesStart, d );
+      else
+        Buffered = Input.Length;
+    }
+
+    public void FindMatches() // LZ77 compression.
+    {
+      byte [] input = Input;
+ 
+      int limit = input.Length - 2;
+      int [] link = new int[ limit ];
+
+      int hashShift = HashShift;
+      uint hashMask = HashMask;
+      int [] hashTable = HashTable;
+
+      int position = 0; // position in input.
+
+      // hash will be hash of three bytes starting at position.
+      uint hash = ( (uint)input[ 0 ] << hashShift ) + input[ 1 ];
+
+      while ( position < limit )
+      {
+        hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;        
+        int hashEntry = hashTable[ hash ];
+        hashTable[ hash ] = position + EncodePosition;
+        if ( position >= hashEntry ) // Equivalent to position - ( hashEntry - EncodePosition ) > MaxDistance.
+        {
+           position += 1;
+           continue;
+        }
+        link[ position ] = hashEntry;
+
+        int distance, match = BestMatch( input, position, out distance, hashEntry - EncodePosition, link );
+        position += 1;
+        if ( match < MinMatch ) continue;
+
+        // "Lazy matching" RFC 1951 p.15 : if there are overlapping matches, there is a choice over which of the match to use.
+        // Example: "abc012bc345.... abc345". Here abc345 can be encoded as either [abc][345] or as a[bc345].
+        // Since a range typically needs more bits to encode than a single literal, choose the latter.
+        while ( position < limit ) 
+        {
+          hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;          
+          hashEntry = hashTable[ hash ];
+          hashTable[ hash ] = position + EncodePosition;
+          if ( position >= hashEntry ) break;
+          link[ position ] = hashEntry;
+
+          if ( !LazyMatch ) break;
+
+          int distance2, match2 = BestMatch( input, position, out distance2, hashEntry - EncodePosition, link );
+          if ( match2 > match || match2 == match && distance2 < distance )
+          {
+            match = match2;
+            distance = distance2;
+            position += 1;
+          }
+          else break;
+        }
+
+        int copyEnd = SaveMatch( position - 1, match, distance );
+        if ( copyEnd > limit ) copyEnd = limit;
+
+        position += 1;
+
+        // Advance to end of copied section.
+        while ( position < copyEnd )
+        { 
+          hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;
+          link[ position ] = hashTable[ hash ];
+          hashTable[ hash ] = position + EncodePosition;
+          position += 1;
+        }
+      }
+
+      HashTable = null; // To potentially free up memory.
+
+      lock( Locker )
+      {
+        Buffered = Input.Length;
+        if ( InputWait ) Monitor.Pulse( Locker );
+      } 
+
+    }
+
+    public int WaitForInput( int request )
+    {
+      while ( true ) 
+      {
+        lock( Locker )
+        {
+          if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
+            return Buffered;
+          else
+          {
+            InputRequest = request;
+            InputWait = true;
+            Monitor.Wait( Locker );
+            InputWait = false;
+          }
+        }
+      }
+    }
+
+    public void Processed( int bufferRead )
+    {
+      Thread.MemoryBarrier();
+      BufferRead = bufferRead;
+      lock( Locker ) 
+      { 
+        if ( BufferFull ) Monitor.Pulse( Locker );
+      }
+    }
+
+    // Instead of initialising HashTable and link arrays to -(MaxDistance+1), EncodePosition 
+    // is added when storing a value and subtracted when retrieving a value.
+    // This means a default value of 0 will always be more distant than MaxDistance.
+    private const int EncodePosition = MaxDistance + 1;
+
+    // Private fields.
+    private int Buffered; // How many Input bytes have been processed to intermediate buffer.
+
+    // Local copies of Deflator fields.
+    private readonly byte [] Input;
+    private readonly bool LazyMatch;
+
+    // Inter-thread signalling fields.
+    private readonly System.Object Locker;
+    private bool BufferFull;
+    private bool InputWait;
+    private int InputRequest;
+
+    // LZ77 hash table ( for MatchPossible function ).
+    private int HashShift;
+    private uint HashMask;
+    private int [] HashTable;
+
+    // Private functions.
+
+    private static void FindMatchesStart( System.Object x )
+    {
+      Deflator d = (Deflator) x;
+      d.Match.FindMatches();
+    }
+
+
+    // BestMatch finds the best match starting at position. 
+    // oldPosition is from hash table, link [] is linked list of older positions.
+
+    private int BestMatch( byte [] input, int position, out int bestDistance, int oldPosition, int [] link )
+    { 
+      int avail = input.Length - position;
+      if ( avail > MaxMatch ) avail = MaxMatch;
+
+      int bestMatch = 0; bestDistance = 0;
+      byte keyByte = input[ position + bestMatch ];
+
+      while ( true )
+      { 
+        if ( input[ oldPosition + bestMatch ] == keyByte )
+        {
+          int match = 0; 
+          while ( match < avail && input[ position + match ] == input[ oldPosition + match ] ) 
+          {
+            match += 1;
+          }
+          if ( match > bestMatch )
+          {
+            bestMatch = match;
+            bestDistance = position - oldPosition;
+            if ( bestMatch == avail || ! MatchPossible( position, bestMatch ) ) break;
+            keyByte = input[ position + bestMatch ];
+          }
+        }
+        oldPosition = link[ oldPosition ];
+        if ( position >= oldPosition ) break;
+        oldPosition -= EncodePosition;
+      }
+      return bestMatch;
+    }
+
+    // MatchPossible is used to try and shorten the BestMatch search by checking whether 
+    // there is a hash entry for the last 3 bytes of the next longest possible match.
+
+    private bool MatchPossible( int position, int bestMatch )
+    {
+      position += bestMatch - 2;
+      uint hash = ( (uint)Input[ position ] << HashShift ) + Input[ position + 1 ];
+      hash = ( ( hash << HashShift ) + Input[ position + 2 ] ) & HashMask;        
+      return position < HashTable[ hash ];
+    }
+
+    private int SaveMatch ( int position, int length, int distance )
+    // Called from FindMatches to save a <length,distance> match. Returns position + length.
+    {
+      int i = BufferWrite;
+      PositionBuffer[ i ] = position;
+      LengthBuffer[ i ] = (byte) ( length - MinMatch );
+      DistanceBuffer[ i ] = (ushort) distance;
+      i = ( i + 1 ) & BufferMask;
+
+      while ( i == BufferRead )
+      {
+        lock ( Locker )
+        {
+          if ( i == BufferRead ) 
+          {
+            BufferFull = true;
+            if ( InputWait ) Monitor.Pulse( Locker );
+            Monitor.Wait( Locker );
+            BufferFull = false;
+          }
+        }
+      }
+
+      Thread.MemoryBarrier();
+      BufferWrite = i;
+      position += length;
+      Thread.MemoryBarrier();
+      Buffered = position;
+
+      if ( InputWait && position >= InputRequest )
+        lock ( Locker ) Monitor.Pulse( Locker );
+
+      return position;
+    }
+
+    private static int CalcBufferSize( int n, int max )
+    // Calculates a power of 2 >= n, but not more than max.
+    {
+      if ( n >= max ) return max;
+      int result = 1;
+      while ( result < n ) result = result << 1;
+      return result;
+    }
+
+    private static int CalcHashShift( int n )
+    {
+      int p = 1;
+      int result = 0;
+      while ( n > p ) 
+      {
+        p = p << MinMatch;
+        result += 1;
+        if ( result == 6 ) break;
+      }
+      return result;
+    } 
+
+  } // end struct Matcher
 
   private class Block
   {
@@ -464,7 +486,7 @@ sealed class Deflator
       if ( previous == null )
       {
         Start = d.Finished;
-        BufferStart = d.BufferRead;
+        BufferStart = d.Match.BufferRead;
       }
       else
       {
@@ -497,12 +519,12 @@ sealed class Deflator
 
       while ( bufferRead != BufferEnd )
       {
-        int matchPosition = d.PositionBuffer[ bufferRead ];
+        int matchPosition = d.Match.PositionBuffer[ bufferRead ];
 
-        int length = d.LengthBuffer[ bufferRead ] + MinMatch;
-        int distance = d.DistanceBuffer[ bufferRead  ]; 
+        int length = d.Match.LengthBuffer[ bufferRead ] + Matcher.MinMatch;
+        int distance = d.Match.DistanceBuffer[ bufferRead  ]; 
 
-        bufferRead = ( bufferRead  + 1 ) & d.BufferMask;
+        bufferRead = ( bufferRead  + 1 ) & d.Match.BufferMask;
 
         while ( position < matchPosition ) 
         {
@@ -559,7 +581,8 @@ sealed class Deflator
       PutCodes( d );
       output.WriteBits( Lit.Bits[ 256 ], Lit.Codes[ 256 ] ); // End of block code
 
-      d.BlockWritten( BufferEnd, End );
+      d.Finished = End;
+      d.Match.Processed( BufferEnd );
     }
 
     // Block private fields and constants.
@@ -585,7 +608,7 @@ sealed class Deflator
     private readonly static ushort [] DistOff = { 1,2,3,4, 5,7,9,13, 17,25,33,49, 65,97,129,193, 257,385,513,769, 
       1025,1537,2049,3073, 4097,6145,8193,12289, 16385,24577 };
 
-    bool CodesComputed = false;
+    private bool CodesComputed = false;
 
     // Block private functions.
 
@@ -597,14 +620,14 @@ sealed class Deflator
       int end = position + blockSize;
 
       bufferRead = BufferStart;
-      while ( position < end && bufferRead != d.BufferWrite )
+      while ( position < end && bufferRead != d.Match.BufferWrite )
       {
-        int matchPosition = d.PositionBuffer[ bufferRead ];
+        int matchPosition = d.Match.PositionBuffer[ bufferRead ];
         if ( matchPosition >= end ) break;
 
-        int length = d.LengthBuffer[ bufferRead ] + MinMatch;
-        int distance = d.DistanceBuffer[ bufferRead ];
-        bufferRead = ( bufferRead + 1 ) & d.BufferMask;
+        int length = d.Match.LengthBuffer[ bufferRead ] + Matcher.MinMatch;
+        int distance = d.Match.DistanceBuffer[ bufferRead ];
+        bufferRead = ( bufferRead + 1 ) & d.Match.BufferMask;
 
         byte [] input = d.Input;
         while ( position < matchPosition ) 
@@ -661,12 +684,12 @@ sealed class Deflator
 
       while ( bufferRead != BufferEnd )
       {
-        int matchPosition = d.PositionBuffer[ bufferRead ];
+        int matchPosition = d.Match.PositionBuffer[ bufferRead ];
 
-        int length = d.LengthBuffer[ bufferRead ] + MinMatch;
-        int distance = d.DistanceBuffer[ bufferRead  ]; 
+        int length = d.Match.LengthBuffer[ bufferRead ] + Matcher.MinMatch;
+        int distance = d.Match.DistanceBuffer[ bufferRead  ]; 
 
-        bufferRead = ( bufferRead  + 1 ) & d.BufferMask;
+        bufferRead = ( bufferRead  + 1 ) & d.Match.BufferMask;
 
         while ( position < matchPosition ) 
         {
