@@ -215,7 +215,7 @@ sealed class Deflator
       InputWait = false;
       InputRequest = 0;
 
-      LazyMatch = false;
+      LazyMatch = d.LazyMatch;
 
       HashShift = CalcHashShift( Input.Length * 2 );
       HashMask = ( 1u << ( MinMatch * HashShift ) ) - 1;
@@ -227,7 +227,67 @@ sealed class Deflator
         Buffered = Input.Length;
     }
 
-    public void FindMatches() // LZ77 compression.
+    public int WaitForInput( int request )
+    {
+      while ( true ) 
+      {
+        lock( Locker )
+        {
+          if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
+            return Buffered;
+          else
+          {
+            InputRequest = request;
+            InputWait = true;
+            Monitor.Wait( Locker );
+            InputWait = false;
+          }
+        }
+      }
+    }
+
+    public void Processed( int bufferRead )
+    {
+      Thread.MemoryBarrier();
+      BufferRead = bufferRead;
+      lock( Locker ) 
+      { 
+        if ( BufferFull ) Monitor.Pulse( Locker );
+      }
+    }
+
+    // Instead of initialising HashTable and link arrays to -(MaxDistance+1), EncodePosition 
+    // is added when storing a value and subtracted when retrieving a value.
+    // This means a default value of 0 will always be more distant than MaxDistance.
+    private const int EncodePosition = MaxDistance + 1;
+
+    // Private fields.
+    private int Buffered; // How many Input bytes have been processed to intermediate buffer.
+
+    // Local copies of Deflator fields.
+    private readonly byte [] Input;
+    private readonly bool LazyMatch;
+
+    // Inter-thread signalling fields.
+    private readonly System.Object Locker;
+    private bool BufferFull;
+    private bool InputWait;
+    private int InputRequest;
+
+    // LZ77 hash table ( for MatchPossible function ).
+    private int HashShift;
+    private uint HashMask;
+    private int [] HashTable;
+
+    // Private functions.
+
+    private static void FindMatchesStart( System.Object x )
+    {
+      Deflator d = (Deflator) x;
+      d.Match.FindMatches();
+    }
+
+    private void FindMatches() // LZ77 compression.
     {
       byte [] input = Input;
  
@@ -306,67 +366,6 @@ sealed class Deflator
       } 
 
     }
-
-    public int WaitForInput( int request )
-    {
-      while ( true ) 
-      {
-        lock( Locker )
-        {
-          if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
-            return Buffered;
-          else
-          {
-            InputRequest = request;
-            InputWait = true;
-            Monitor.Wait( Locker );
-            InputWait = false;
-          }
-        }
-      }
-    }
-
-    public void Processed( int bufferRead )
-    {
-      Thread.MemoryBarrier();
-      BufferRead = bufferRead;
-      lock( Locker ) 
-      { 
-        if ( BufferFull ) Monitor.Pulse( Locker );
-      }
-    }
-
-    // Instead of initialising HashTable and link arrays to -(MaxDistance+1), EncodePosition 
-    // is added when storing a value and subtracted when retrieving a value.
-    // This means a default value of 0 will always be more distant than MaxDistance.
-    private const int EncodePosition = MaxDistance + 1;
-
-    // Private fields.
-    private int Buffered; // How many Input bytes have been processed to intermediate buffer.
-
-    // Local copies of Deflator fields.
-    private readonly byte [] Input;
-    private readonly bool LazyMatch;
-
-    // Inter-thread signalling fields.
-    private readonly System.Object Locker;
-    private bool BufferFull;
-    private bool InputWait;
-    private int InputRequest;
-
-    // LZ77 hash table ( for MatchPossible function ).
-    private int HashShift;
-    private uint HashMask;
-    private int [] HashTable;
-
-    // Private functions.
-
-    private static void FindMatchesStart( System.Object x )
-    {
-      Deflator d = (Deflator) x;
-      d.Match.FindMatches();
-    }
-
 
     // BestMatch finds the best match starting at position. 
     // oldPosition is from hash table, link [] is linked list of older positions.
