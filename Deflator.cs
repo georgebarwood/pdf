@@ -81,7 +81,6 @@ sealed class Deflator
   public bool TuneBlockSize = true;
 
   public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
-  public bool MultiThread = true; // Set false to disable multi-threading.
 
   public Deflator( byte [] input, OutBitStream output )
   { 
@@ -96,16 +95,12 @@ sealed class Deflator
       Output.WriteBits( 16, 0x9c78 );
     }
 
-    if ( LZ77 && MultiThread && Input.Length > StartBlockSize * 2 )
+    if ( LZ77 && Input.Length > MinMatch )
     {
       ThreadPool.QueueUserWorkItem( FindMatchesStart, this );
     }
     else
     {
-      if ( LZ77 && Input.Length > MinMatch )
-      {
-        FindMatches();
-      }
       Buffered = Input.Length;
     }
 
@@ -307,6 +302,9 @@ sealed class Deflator
   private int SaveMatch ( int position, int length, int distance )
   // Called from FindMatches to save a <length,distance> match. Returns position + length.
   {
+    { for ( int j=0; j<length; j+=1 ) if ( Input[position+j] != Input[position-distance+j] ) throw new System.Exception(); }
+
+
     int i = BufferWrite;
     PositionBuffer[ i ] = position;
     LengthBuffer[ i ] = (byte) ( length - MinMatch );
@@ -314,14 +312,16 @@ sealed class Deflator
     i = ( i + 1 ) & BufferMask;
 
     while ( i == BufferRead )
-    lock ( BufferLock )
     {
-      if ( i == BufferRead ) 
+      lock ( BufferLock )
       {
-        BufferFull = true;
-        if ( InputWait ) Monitor.Pulse( BufferLock );
-        Monitor.Wait( BufferLock );
-        BufferFull = false;
+        if ( i == BufferRead ) 
+        {
+          BufferFull = true;
+          if ( InputWait ) Monitor.Pulse( BufferLock );
+          Monitor.Wait( BufferLock );
+          BufferFull = false;
+        }
       }
     }
 
@@ -351,16 +351,18 @@ sealed class Deflator
   private int WaitForInput( int request )
   {
     while ( true ) 
-    lock( BufferLock )
     {
-      if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
-        return Buffered;
-      else
+      lock( BufferLock )
       {
-        InputRequest = request;
-        InputWait = true;
-        Monitor.Wait( BufferLock );
-        InputWait = false;
+        if ( Buffered == Input.Length || BufferFull || Buffered >= request ) 
+          return Buffered;
+        else
+        {
+          InputRequest = request;
+          InputWait = true;
+          Monitor.Wait( BufferLock );
+          InputWait = false;
+        }
       }
     }
   }
@@ -371,7 +373,7 @@ sealed class Deflator
   
     if ( blockSize > StartBlockSize ) 
     {
-      blockSize = ( Buffered == Input.Length && blockSize <= StartBlockSize * 2 ) ? blockSize >> 1 : StartBlockSize;
+      blockSize = ( Buffered == Input.Length && blockSize <= StartBlockSize * 2 ) ? blockSize  : StartBlockSize;
     }
 
     Block b = new Block( this, blockSize, null );
@@ -383,7 +385,7 @@ sealed class Deflator
     {
       int avail = WaitForInput( b.End + blockSize );
 
-      if ( avail < b.End + blockSize ) blockSize = avail - b.End;
+      if ( avail < b.End + blockSize ) break;
 
       if ( blockSize == 0 ) break;       
 
@@ -468,6 +470,8 @@ sealed class Deflator
         Start = previous.End;
         BufferStart = previous.BufferEnd;
       }
+
+      if ( Start + blockSize > d.Buffered ) throw new System.Exception();
 
       End = TallyFrequencies( d, blockSize, out BufferEnd );
       Lit.Used[ 256 ] += 1; // End of block code.
@@ -590,7 +594,7 @@ sealed class Deflator
 
       int delta = 0, bestDelta = 0, bestPosition = position;
 
-      while ( bufferRead < BufferEnd )
+      while ( bufferRead != BufferEnd )
       {
         int matchPosition = d.PositionBuffer[ bufferRead ];
 
@@ -645,7 +649,7 @@ sealed class Deflator
       int position = Start;
       int bufferRead = BufferStart;
 
-      while ( bufferRead < BufferEnd )
+      while ( bufferRead != BufferEnd )
       {
         int matchPosition = d.PositionBuffer[ bufferRead ];
 
