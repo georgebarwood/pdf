@@ -373,7 +373,7 @@ sealed class Deflator
   
     if ( blockSize > StartBlockSize ) 
     {
-      blockSize = ( Buffered == Input.Length && blockSize <= StartBlockSize * 2 ) ? blockSize  : StartBlockSize;
+      blockSize = ( Buffered == Input.Length && blockSize <= StartBlockSize * 2 ) ? blockSize : StartBlockSize;
     }
 
     Block b = new Block( this, blockSize, null );
@@ -386,8 +386,6 @@ sealed class Deflator
       int avail = WaitForInput( b.End + blockSize );
 
       if ( avail < b.End + blockSize ) break;
-
-      if ( blockSize == 0 ) break;       
 
       // b2 is a block which starts just after b.
       Block b2 = new Block( this, blockSize, b );
