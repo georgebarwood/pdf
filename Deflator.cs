@@ -71,13 +71,15 @@ sealed class Deflator
 
   // Options : to amend these use new Deflator( input, output ) and set before calling Go().
   // Possible "fast" setting : StartBlockSize = 0x4000, LazyMatch = false, DynamicBlockSize = false.
-  public int StartBlockSize = 0x1000; // Increase to go faster ( with less compression ), reduce to try for more compression.
+  public int StartBlockSize = 0x800;
+  public int MaxBlockSize = 0x18000;
+  public int FixedBlockSize = 0x4000; // Used if DynamicBlockSize = false.
   public int MaxBufferSize = 0x8000; // Must be power of 2.
 
   // Compression options - set false to go faster, with less compression.
   public bool LZ77 = true;
   public bool LazyMatch = true;
-  public bool DynamicBlockSize = true; 
+  public bool DynamicBlockSize = true;
   public bool TuneBlockSize = true;
 
   public bool RFC1950 = true; // Set false to suppress RFC 1950 fields.
@@ -216,13 +218,15 @@ sealed class Deflator
       // "Lazy matching" RFC 1951 p.15 : if there are overlapping matches, there is a choice over which of the match to use.
       // Example: "abc012bc345.... abc345". Here abc345 can be encoded as either [abc][345] or as a[bc345].
       // Since a range typically needs more bits to encode than a single literal, choose the latter.
-      while ( LazyMatch && position < limit ) 
+      while ( position < limit ) 
       {
         hash = ( ( hash << hashShift ) + input[ position + 2 ] ) & hashMask;          
         hashEntry = hashTable[ hash ];
         hashTable[ hash ] = position + EncodePosition;
         if ( position >= hashEntry ) break;
         link[ position ] = hashEntry;
+
+        if ( !LazyMatch ) break;
 
         int distance2, match2 = BestMatch( input, position, out distance2, hashEntry - EncodePosition, link );
         if ( match2 > match || match2 == match && distance2 < distance )
@@ -369,11 +373,13 @@ sealed class Deflator
 
   private Block GetBlock()
   {
-    int blockSize = WaitForInput( Finished + StartBlockSize ) - Finished;
+    int startBlockSize = DynamicBlockSize ? StartBlockSize : FixedBlockSize;
+
+    int blockSize = WaitForInput( Finished + startBlockSize ) - Finished;
   
-    if ( blockSize > StartBlockSize ) 
+    if ( blockSize > startBlockSize ) 
     {
-      blockSize = ( Buffered == Input.Length && blockSize <= StartBlockSize * 2 ) ? blockSize : StartBlockSize;
+      blockSize = ( Buffered == Input.Length && blockSize <= startBlockSize * 2 ) ? blockSize : startBlockSize;
     }
 
     Block b = new Block( this, blockSize, null );
@@ -383,6 +389,8 @@ sealed class Deflator
     // Investigate larger block size.
     while ( DynamicBlockSize ) 
     {
+      if ( blockSize * 2 > MaxBlockSize ) break;
+
       int avail = WaitForInput( b.End + blockSize );
 
       if ( avail < b.End + blockSize ) break;
