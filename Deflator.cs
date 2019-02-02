@@ -11,7 +11,6 @@ using uword = System.UInt64;
 
 namespace Pdf {
 
-
 /* RFC 1951 compression ( https://www.ietf.org/rfc/rfc1951.txt ) aims to compress a stream of bytes using :
 
    (1) LZ77 matching, where if an input sequences of at least 3 bytes re-occurs, it may be coded 
@@ -70,7 +69,6 @@ sealed class Deflator
   }
 
   // Options : to amend these use new Deflator( input, output ) and set before calling Go().
-  // Possible "fast" setting : StartBlockSize = 0x4000, LazyMatch = false, DynamicBlockSize = false.
   public int StartBlockSize = 0x800;
   public int MaxBlockSize = 0x18000;
   public int FixedBlockSize = 0x4000; // Used if DynamicBlockSize = false.
