@@ -41,7 +41,7 @@ namespace Pdf {
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
    is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,572 bytes 
-   in the same time.
+   in 17 milliseconds.
 
    Sample usage:
 
@@ -133,8 +133,8 @@ sealed class Deflator
 
   // Private fields.
 
-  private byte [] Input;
-  private OutBitStream Output;
+  private readonly byte [] Input;
+  private readonly OutBitStream Output;
 
   private int Buffered; // How many Input bytes have been processed to intermediate buffer.
   private int Finished; // How many Input bytes have been written to Output.
@@ -378,7 +378,7 @@ sealed class Deflator
     }
 
     Block b = new Block( this, blockSize, null );
-    int bits = b.GetBits(); // Compressed size in bits.
+    int bits = b.BitSize();
     int tunedBlockSize = blockSize;
 
     // Investigate larger block size.
@@ -396,8 +396,8 @@ sealed class Deflator
       // b3 covers b and b2 exactly as one block.
       Block b3 = new Block( this, b2.End - b.Start, null );
       
-      int bits2 = b2.GetBits();
-      int bits3 = b3.GetBits(); 
+      int bits2 = b2.BitSize();
+      int bits3 = b3.BitSize(); 
 
       int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out tunedBlockSize ) : 0;
 
@@ -412,7 +412,6 @@ sealed class Deflator
     if ( tunedBlockSize > blockSize )
     {
       b = new Block( this, tunedBlockSize, null ); 
-      b.GetBits();
     }
 
     return b;
@@ -476,8 +475,10 @@ sealed class Deflator
       Lit.Used[ 256 ] += 1; // End of block code.
     }
 
-    public int GetBits()
+    private void ComputeCodes()
     {
+      if ( CodesComputed ) return;      
+
       Lit.ComputeCodes();
       Dist.ComputeCodes();
 
@@ -490,11 +491,18 @@ sealed class Deflator
       // The length codes are permuted before being stored ( so that # of trailing zeroes is likely to be more ).
       Len.Count = 19; while ( Len.Count > 4 && Len.Bits[ ClenAlphabet[ Len.Count - 1 ] ] == 0 ) Len.Count -= 1;
 
+      CodesComputed = true;
+    }
+
+    public int BitSize()
+    { 
+      ComputeCodes();
       return 17 + 3 * Len.Count + Len.Total() + Lit.Total() + Dist.Total();
     }
 
     public void WriteBlock( Deflator d, bool last )
     {
+      ComputeCodes();
       OutBitStream output = Output;
       output.WriteBits( 1, last ? 1u : 0u );
       output.WriteBits( 2, 2 );
@@ -534,6 +542,8 @@ sealed class Deflator
     private readonly static byte [] DistExtra = { 0,0,0,0, 1,1,2,2, 3,3,4,4, 5,5,6,6, 7,7,8,8, 9,9,10,10, 11,11,12,12, 13,13 };
     private readonly static ushort [] DistOff = { 1,2,3,4, 5,7,9,13, 17,25,33,49, 65,97,129,193, 257,385,513,769, 
       1025,1537,2049,3073, 4097,6145,8193,12289, 16385,24577 };
+
+    bool CodesComputed = false;
 
     // Block private functions.
 
