@@ -203,14 +203,8 @@ sealed class Deflator
     public Matcher( Deflator d )
     {
       Input = d.Input;
+      LazyMatch = d.LazyMatch;
       Locker = new System.Object();
-      Buffered = 0;
-      
-      int bufferSize = CalcBufferSize( Input.Length / 3, d.MaxBufferSize );
-      PositionBuffer = new int[ bufferSize ];
-      LengthBuffer   = new byte[ bufferSize ];
-      DistanceBuffer = new ushort[ bufferSize ];   
-      BufferMask = bufferSize - 1;
 
       BufferWrite = 0;
       BufferRead = 0;
@@ -218,16 +212,25 @@ sealed class Deflator
       InputWait = false;
       InputRequest = 0;
 
-      LazyMatch = d.LazyMatch;
+      Buffered = Input.Length;
 
-      HashShift = CalcHashShift( Input.Length * 2 );
+      int length = d.LZ77 && Input.Length > Matcher.MinMatch ? Input.Length : 0;
+
+      int bufferSize = CalcBufferSize( length / 3, d.MaxBufferSize );
+      PositionBuffer = new int[ bufferSize ];
+      LengthBuffer   = new byte[ bufferSize ];
+      DistanceBuffer = new ushort[ bufferSize ];   
+      BufferMask = bufferSize - 1;
+
+      HashShift = CalcHashShift( length * 2 );
       HashMask = ( 1u << ( MinMatch * HashShift ) ) - 1;
       HashTable = new int[ HashMask + 1 ];
 
-      if ( d.LZ77 && Input.Length > Matcher.MinMatch )
+      if ( length != 0 )
+      {
+        Buffered = 0;
         ThreadPool.QueueUserWorkItem( FindMatchesStart, d );
-      else
-        Buffered = Input.Length;
+      }
     }
 
     public int WaitForInput( int request )
