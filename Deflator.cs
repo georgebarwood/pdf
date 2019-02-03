@@ -546,7 +546,6 @@ sealed class Deflator
         delta += prev.Dist.Bits[ dc ] - Dist.Bits[ dc ];
 
         if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
-        position += 1;
       }
 
       while ( position < end ) 
