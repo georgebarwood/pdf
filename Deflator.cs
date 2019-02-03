@@ -40,7 +40,7 @@ namespace Pdf {
    while compressing at a similar speed ( default options, after warmup ).
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
-   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,433 bytes 
+   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,431 bytes 
    in 17 milliseconds.
 
    Sample usage:
@@ -137,6 +137,9 @@ sealed class Deflator
     if ( DynamicBlockSize )
     while ( true ) 
     {
+      blockSize = b.End - b.Start;
+      tunedBlockSize = blockSize;
+
       if ( blockSize * 2 > MaxBlockSize ) break;
 
       int avail = Match.WaitForInput( b.End + blockSize );
@@ -153,14 +156,12 @@ sealed class Deflator
       int bits2 = b2.BitSize();
       int bits3 = b3.BitSize(); 
 
-      int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 4, out tunedBlockSize ) : 0;
+      int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 2, out tunedBlockSize ) : 0;
 
       if ( bits3 > bits + bits2 + delta ) break;
 
       bits = bits3;
       b = b3;
-      blockSize += blockSize; 
-      tunedBlockSize = blockSize;
     }      
 
     if ( tunedBlockSize > blockSize )
@@ -513,11 +514,10 @@ sealed class Deflator
       int position = Start;
       int bufferRead = BufferStart;
       int end = position + howfar;
-      if ( end > End ) end = End;
 
       int delta = 0, bestDelta = 0, bestPosition = position;
 
-      while ( bufferRead != BufferEnd )
+      while ( position < end && bufferRead != BufferEnd )
       {
         int matchPosition = d.Match.PositionBuffer[ bufferRead ];
 
