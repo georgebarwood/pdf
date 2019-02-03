@@ -517,16 +517,12 @@ sealed class Deflator
 
       int delta = 0, bestDelta = 0, bestPosition = position;
 
-      while ( position < end && bufferRead != BufferEnd )
+      while ( true )
       {
-        int matchPosition = d.Match.PositionBuffer[ bufferRead ];
+        int endLit = bufferRead == BufferEnd ? end : d.Match.PositionBuffer[ bufferRead ];
+        if ( endLit > end ) endLit = end;
 
-        int length = d.Match.LengthBuffer[ bufferRead ] + Matcher.MinMatch;
-        int distance = d.Match.DistanceBuffer[ bufferRead  ]; 
-
-        bufferRead = ( bufferRead  + 1 ) & d.Match.BufferMask;
-
-        while ( position < matchPosition ) 
+        while ( position < endLit ) 
         {
           byte b = d.Input[ position ];
  
@@ -535,6 +531,14 @@ sealed class Deflator
           if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
           position += 1;
         }  
+
+        if ( position >= end ) break;
+
+        int length = d.Match.LengthBuffer[ bufferRead ] + Matcher.MinMatch;
+        int distance = d.Match.DistanceBuffer[ bufferRead  ]; 
+
+        bufferRead = ( bufferRead  + 1 ) & d.Match.BufferMask;
+
         position += length;
 
         // Compute match and distance codes.
@@ -548,15 +552,6 @@ sealed class Deflator
 
         if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
       }
-
-      while ( position < end ) 
-      {
-        byte b = d.Input[ position ];
-        if ( prev.Lit.Bits[ b ] == 0 ) delta += 15;
-        delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
-        if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
-        position += 1;
-      }  
 
       blockSize = bestPosition - prev.Start;
       return bestDelta;
@@ -677,21 +672,24 @@ sealed class Deflator
       int position = Start;
       int bufferRead = BufferStart;
 
-      while ( bufferRead != BufferEnd )
+      while ( true )
       {
-        int matchPosition = d.Match.PositionBuffer[ bufferRead ];
+        int endLit = bufferRead == BufferEnd ? End : d.Match.PositionBuffer[ bufferRead ];
+
+        while ( position < endLit ) 
+        {
+          byte b = d.Input[ position ];
+          Output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
+          position += 1;
+        }  
+
+        if ( position == End ) break;
 
         int length = d.Match.LengthBuffer[ bufferRead ] + Matcher.MinMatch;
         int distance = d.Match.DistanceBuffer[ bufferRead  ]; 
 
         bufferRead = ( bufferRead  + 1 ) & d.Match.BufferMask;
 
-        while ( position < matchPosition ) 
-        {
-          byte b = d.Input[ position ];
-          Output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
-          position += 1;
-        }  
         position += length;
 
         // Compute match and distance codes.
@@ -703,13 +701,6 @@ sealed class Deflator
         Output.WriteBits( Dist.Bits[ dc ], Dist.Codes[ dc ] );
         Output.WriteBits( DistExtra[ dc ], (uint)(distance-DistOff[ dc ] ) );    
       }
-
-      while ( position < End ) 
-      {
-        byte b = d.Input[ position ];
-        Output.WriteBits( Lit.Bits[ b ], Lit.Codes[ b ] );
-        position += 1;
-      }  
     }
 
     // Run length encoding of code lengths - RFC 1951, page 13.
