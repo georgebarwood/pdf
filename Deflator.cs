@@ -40,7 +40,7 @@ namespace Pdf {
    while compressing at a similar speed ( default options, after warmup ).
 
    For example, compressing a font file FreeSans.ttf ( 264,072 bytes ), Zlib output 
-   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,572 bytes 
+   is 148,324 bytes in 19 milliseconds, whereas Deflator output is 143,433 bytes 
    in 17 milliseconds.
 
    Sample usage:
@@ -508,7 +508,7 @@ sealed class Deflator
     {
       // Investigate whether moving data into the previous block uses fewer bits,
       // using the current encodings. If a symbol with no encoding in the 
-      // previous block is found, terminate the search ( goto EndSearch ).
+      // previous block is found, assume it will be encoded as 15 bits.
 
       int position = Start;
       int bufferRead = BufferStart;
@@ -530,7 +530,7 @@ sealed class Deflator
         {
           byte b = d.Input[ position ];
  
-          if ( prev.Lit.Bits[ b ] == 0 ) goto EndSearch;
+          if ( prev.Lit.Bits[ b ] == 0 ) delta += 15;
           delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
           if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
           position += 1;
@@ -541,7 +541,8 @@ sealed class Deflator
         int mc = 0; while ( length >= MatchOff[ mc ] ) mc += 1; mc -= 1;
         int dc = 29; while ( distance < DistOff[ dc ] ) dc -= 1;
 
-        if ( prev.Lit.Bits[ 257 + mc ] == 0 || prev.Dist.Bits[ dc ] == 0 ) goto EndSearch;
+        if ( prev.Lit.Bits[ 257 + mc ] == 0 ) delta += 15;
+        if ( prev.Dist.Bits[ dc ] == 0 ) delta += 15;
         delta += prev.Lit.Bits[ 257 + mc ] - Lit.Bits[ 257 + mc  ];
         delta += prev.Dist.Bits[ dc ] - Dist.Bits[ dc ];
 
@@ -551,14 +552,12 @@ sealed class Deflator
       while ( position < end ) 
       {
         byte b = d.Input[ position ];
-        if ( prev.Lit.Bits[ b ] == 0 ) goto EndSearch;
+        if ( prev.Lit.Bits[ b ] == 0 ) delta += 15;
         delta += prev.Lit.Bits[ b ] - Lit.Bits[ b ];
         if ( delta < bestDelta ) { bestDelta = delta; bestPosition = position; }
         position += 1;
       }  
 
-      EndSearch:
-      
       blockSize = bestPosition - prev.Start;
       return bestDelta;
     }
