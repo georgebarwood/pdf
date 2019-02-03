@@ -131,14 +131,12 @@ sealed class Deflator
 
     Block b = new Block( this, blockSize, null );
     int bits = -1;
-    int tunedBlockSize = blockSize;
 
     // Investigate larger block size.
     if ( DynamicBlockSize )
     while ( true ) 
     {
       blockSize = b.End - b.Start;
-      tunedBlockSize = blockSize;
 
       if ( blockSize * 2 > MaxBlockSize ) break;
 
@@ -156,19 +154,18 @@ sealed class Deflator
       int bits2 = b2.BitSize();
       int bits3 = b3.BitSize(); 
 
+      int tunedBlockSize = 0;
       int delta = TuneBlockSize ? b2.TuneBoundary( this, b, blockSize / 2, out tunedBlockSize ) : 0;
 
-      if ( bits3 > bits + bits2 + delta ) break;
+      if ( bits3 > bits + bits2 + delta ) 
+      {
+        if ( delta < 0 ) b = new Block( this, tunedBlockSize, null ); 
+        break;
+      }
 
       bits = bits3;
       b = b3;
     }      
-
-    if ( tunedBlockSize > blockSize )
-    {
-      b = new Block( this, tunedBlockSize, null ); 
-    }
-
     return b;
   }
 
