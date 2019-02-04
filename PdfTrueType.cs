@@ -202,7 +202,7 @@ class TrueTypeFont : PdfFont // For embedding subset of a TrueType font in a PDF
           if ( gs.Points > maxComponentPoints ) maxComponentPoints = gs.Points;
           if ( gs.Contours > maxComponentContours ) maxComponentContours = gs.Contours;
           if ( gs.ComponentDepth > maxComponentDepth ) maxComponentDepth = gs.ComponentDepth;
-          // Maximum number of components referenced at “top level” for any composite glyph.
+          // Maximum number of components referenced at â€œtop levelâ€ for any composite glyph.
           if ( g.Components.Count > maxComponentElements ) maxComponentElements = g.Components.Count; // Not sure what "top level" means, maybe just not recursive calc?
         }
       }
