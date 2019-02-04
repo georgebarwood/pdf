@@ -1,6 +1,5 @@
 using Generic = System.Collections.Generic;
 using Monitor = System.Threading.Monitor;
-using ThreadPool = System.Threading.ThreadPool;
 using Thread = System.Threading.Thread;
 
 #if x32
@@ -229,7 +228,7 @@ sealed class Deflator
       if ( length != 0 )
       {
         Buffered = 0;
-        ThreadPool.QueueUserWorkItem( FindMatchesStart, d );
+        System.Threading.ThreadPool.QueueUserWorkItem( FindMatchesStart, d );
       }
     }
 
@@ -262,12 +261,8 @@ sealed class Deflator
       }
     }
 
-    // Instead of initialising HashTable and link arrays to -(MaxDistance+1), EncodePosition 
-    // is added when storing a value and subtracted when retrieving a value.
-    // This means a default value of 0 will always be more distant than MaxDistance.
-    private const int EncodePosition = MaxDistance + 1;
-
     // Private fields.
+
     private int Buffered; // How many Input bytes have been processed to intermediate buffer.
 
     // Local copies of Deflator fields.
@@ -284,6 +279,13 @@ sealed class Deflator
     private bool BufferFull;
     private bool InputWait;
     private int InputRequest;
+
+    // Private constant.
+
+    // Instead of initialising HashTable and link arrays to -(MaxDistance+1), EncodePosition 
+    // is added when storing a value and subtracted when retrieving a value.
+    // This means a default value of 0 will always be more distant than MaxDistance.
+    private const int EncodePosition = MaxDistance + 1;
 
     // Private functions.
 
@@ -837,7 +839,7 @@ struct HuffmanCoding // Variable length coding.
   {
     int result = 0;
     for ( int i = 0; i < Count; i += 1 ) 
-      result += Used[i] * Bits[i];
+      result += Used[ i ] * Bits[ i ];
     return result;
   }
 
@@ -988,7 +990,6 @@ struct HuffmanCoding // Variable length coding.
 
     // Sort is complete.
 
-    // List class is from System.Collections.Generic.
     Generic.List<ulong> merged = new Generic.List<ulong>( Count ), 
                 next = new Generic.List<ulong>( Count );
 
