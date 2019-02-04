@@ -33,7 +33,13 @@ public class Util // Various misc. functions
     IO.MemoryStream ms = new IO.MemoryStream();
     using( IO.FileStream f = IO.File.OpenRead( path) )
     {
-      f.CopyTo( ms );
+      // f.CopyTo( ms );
+      byte[] buffer = new byte[0x1000];
+      int read;
+      while ( ( read = f.Read(buffer, 0, buffer.Length ) ) > 0 )
+      {
+        ms.Write (buffer, 0, read);
+      }
     }
     return ms.ToArray();
   }
