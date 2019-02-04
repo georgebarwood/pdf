@@ -371,11 +371,56 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
 
   private class WordBuffer : Generic.List<TextElem>
   {
-    public void Str( String x, int i1, int i2 ) { this.Add( new TextElem{ Kind=0, X = x, I1 = i1, I2 = i2 } ); }
-    public void Font( PdfFont x, int i1 ) {  this.Add( new TextElem{ Kind=1, X = x, I1 = i1 } ); }
-    public void Super( int i1 ) { this.Add( new TextElem{ Kind=2, I1 = i1 } ); }
-    public void Color( String x ) { this.Add( new TextElem{ Kind=3, X = x } ); }
-    public void Other( String x ) { this.Add( new TextElem{ Kind=4, X = x } ); }
+    public void Str( String x, int i1, int i2 ) 
+    { 
+      TextElem e;
+      e.Kind = 0;
+      e.X = x; 
+      e.I1 = i1;
+      e.I2 = i2;
+      this.Add( e );
+    }
+
+    public void Font( PdfFont x, int i1 ) 
+    {  
+      TextElem e;
+      e.Kind = 1;
+      e.X = x;
+      e.I1 = i1;
+      e.I2 = 0;
+      this.Add( e );
+    }
+
+    public void Super( int i1 ) 
+    { 
+      TextElem e;
+      e.Kind = 2;
+      e.X = null;
+      e.I1 = i1;
+      e.I2 = 0;
+      this.Add( e );
+    }
+
+    public void Color( String x ) 
+    { 
+      TextElem e;
+      e.Kind = 3;
+      e.X = x;
+      e.I1 = 0;
+      e.I2 = 0;
+      this.Add( e );
+    }
+
+    public void Other( String x ) 
+    { 
+      TextElem e;
+      e.Kind = 4;
+      e.X = x;
+      e.I1 = 0;
+      e.I2 = 0;
+      this.Add( e );
+    }
+
     public void Flush( LineBuffer b ) { foreach ( TextElem e in this ) b.Add( e ); Clear(); }
   }
 
