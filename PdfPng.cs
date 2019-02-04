@@ -440,7 +440,7 @@ public class Reader // Class for reading a Png (portable network graphics) file 
         for ( srcX = 0; srcX < width; srcX++ )
         {
           int idx = outp[ srcX ];
-          v[0] = idx < Trans.Length ? Trans[ idx ] : 255;
+          v[0] = idx < Trans.Length ? (int)Trans[ idx ] : 255;
           SetPixel( Smask, v, 0, 1, dstX, y, 8, yStride );
           dstX  += step;
         }
