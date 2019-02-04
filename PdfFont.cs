@@ -46,7 +46,7 @@ public class StandardFont : PdfFont
     if ( c < 32 ) return 0;
     if ( CharWidth == null ) return 0.6f * fontsize; // Courier   
     int ix = (int)c - 32;
-    float w = ix < CharWidth.Length ? CharWidth[ ix ] : 1000;
+    float w = ix < CharWidth.Length ? CharWidth[ ix ] : 1000f;
     return w * 0.001f * fontsize;
   }   
 
