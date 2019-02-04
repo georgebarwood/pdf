@@ -191,8 +191,8 @@ public class PdfPage
     OS = new System.IO.MemoryStream(), // Final output stream, includes graphics and text.
     TS = new System.IO.MemoryStream(); // Text stream.
 
-  private readonly Generic.HashSet<int> Fonts = new Generic.HashSet<int>(); // Fonts used by page
-  private readonly Generic.HashSet<int> Xobjs = new Generic.HashSet<int>(); // XObjects used by page ( typically images )
+  private readonly Generic.List<int> Fonts = new Generic.List<int>(); // Fonts used by page
+  private readonly Generic.List<int> Xobjs = new Generic.List<int>(); // XObjects used by page ( typically images )
 
   private void NoteXobj( int objnum ){ Xobjs.Add(objnum); }
 
@@ -205,7 +205,7 @@ public class PdfPage
     Put( "\nET" );
   }   
 
-  private static void PutResourceSet( PdfWriter w, Generic.HashSet<int> S, String n1, String n2 )
+  private static void PutResourceSet( PdfWriter w, Generic.List<int> S, String n1, String n2 )
   {
     if ( S.Count > 0 ){ w.Put( n1 + "<<" ); foreach (int i in S) w.Put( n2 + i + " " + i + " 0 R" );  w.Put( ">>" );  }
   }
