@@ -90,8 +90,8 @@ class Reader // class to decode a TrueType file.
   int IndexToLocFormat;  
   uint NumOfLongHorMetrics;
 
-  Generic.HashSet<uint> Cmap = new Generic.HashSet<uint>();
-  struct Table {  public uint Offset, Length; }
+  Generic.List<uint> Cmap = new Generic.List<uint>();
+  struct Table {  public uint Offset, Length; public Table( uint off, uint len ) { Offset=off; Length=len; } }
   Generic.Dictionary<uint,Table> Tables = new Generic.Dictionary<uint,Table>();
 
   public Reader( byte [] data )
@@ -107,7 +107,7 @@ class Reader // class to decode a TrueType file.
       Ix += 4; // Skip checksum
       uint off = Get32();
       uint len = Get32();
-      Tables[tag] = new Table{ Offset = off, Length = len };
+      Tables[tag] = new Table( off, len );;
     }
     GotoTable( Tid.head );
     Ix += 18; // Skip Version .. MagicNumber, flags = 16 */
@@ -176,9 +176,9 @@ class Reader // class to decode a TrueType file.
   public int FindGlyph( int uc )
   {
     uint c = (uint)uc;
-    foreach ( uint cmap in Cmap )
+    foreach ( uint ix in Cmap )
     {
-      Ix = cmap; IxLimit = CmapLimit;
+      Ix = ix; IxLimit = CmapLimit;
       uint format = Get16();
       switch (format)
       {
@@ -419,7 +419,8 @@ class Reader // class to decode a TrueType file.
           else if ( (flags & 0x40 ) != 0 ) { s1 = Get16(); s2 = Get16(); }
           else if ( (flags & 0x80 ) != 0 ) { s1 = Get16(); s2 = Get16(); s3 = Get16(); s4 = Get16(); }
 
-          components.Add( new Component{ GlyphIx = glyphIndex, Flags = flags, A1 = a1, A2 = a2, S1=s1, S2=s2, S3=s3, S4=s4 } );
+          Component nc; nc.GlyphIx = glyphIndex; nc.Flags = flags; nc.A1 = a1; nc.A2 = a2; nc.S1=s1; nc.S2=s2; nc.S3=s3; nc.S4 = s4;
+          components.Add( nc );
          
           if ( ( flags & 0x20 ) == 0 ) break;
         }
@@ -570,7 +571,8 @@ class Writer : MemStream // Helper class for writing TrueType files.
 
     uint chk = Sum( TablePos, (int)((len+3)/4) );
 
-    Dir[tag] = new DirEntry{ Off=(uint)TablePos, Chk = chk, Len = (uint)len };
+    DirEntry de; de.Off=(uint)TablePos; de.Chk = chk; de.Len = (uint)len;
+    Dir[tag] = de;
 
     TableCount += 1;
     TablePos = next;
