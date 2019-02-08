@@ -29,19 +29,8 @@ public class Util // Various misc. functions
 
   public static byte[] GetFile( String path )
   {
+    return IO.File.ReadAllBytes( path );
     // Console.WriteLine( "GetFile " + path );
-    IO.MemoryStream ms = new IO.MemoryStream();
-    using( IO.FileStream f = IO.File.OpenRead( path) )
-    {
-      // f.CopyTo( ms );
-      byte[] buffer = new byte[0x1000];
-      int read;
-      while ( ( read = f.Read(buffer, 0, buffer.Length ) ) > 0 )
-      {
-        ms.Write (buffer, 0, read);
-      }
-    }
-    return ms.ToArray();
   }
 
   public static void WriteFile( String path, byte [] data )
