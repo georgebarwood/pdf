@@ -65,7 +65,7 @@ public class PdfPage
 
     if ( LastFont != CurFont || LastFontSize != FontSize )
     {
-      Fonts.Add( CurFont.Obj );
+      if ( !Fonts.Contains( CurFont.Obj) ) Fonts.Add( CurFont.Obj );
       TSW( "/F" + CurFont.Obj + " " + FontSize + " Tf" );
       LastFont = CurFont;
       LastFontSize = FontSize;
@@ -194,7 +194,7 @@ public class PdfPage
   private readonly Generic.List<int> Fonts = new Generic.List<int>(); // Fonts used by page
   private readonly Generic.List<int> Xobjs = new Generic.List<int>(); // XObjects used by page ( typically images )
 
-  private void NoteXobj( int objnum ){ Xobjs.Add(objnum); }
+  private void NoteXobj( int objnum ){ if ( !Xobjs.Contains(objnum) ) Xobjs.Add(objnum); }
 
   private void EndText() // Copies TS to OS enclosed by "BT" and "ET".
   {
