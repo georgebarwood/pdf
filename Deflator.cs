@@ -205,9 +205,10 @@ sealed class Deflator
 
     public Matcher( Deflator d )
     {
+      Locker = new System.Object();
+
       Input = d.Input;
       LazyMatch = d.LazyMatch;
-      Locker = new System.Object();
 
       BufferWrite = 0;
       BufferRead = 0;
@@ -228,10 +229,12 @@ sealed class Deflator
       HashShift = CalcHashShift( length * 2 );
       HashMask = ( 1u << ( MinMatch * HashShift ) ) - 1;
       HashTable = new int[ HashMask + 1 ];
+     
 
       if ( length != 0 )
       {
         Buffered = 0;
+        Thread.MemoryBarrier();
         System.Threading.ThreadPool.QueueUserWorkItem( FindMatchesStart, d );
       }
     }
@@ -302,6 +305,7 @@ sealed class Deflator
     private void FindMatches() // LZ77 compression.
     {
       int limit = Input.Length - 2;
+
       int [] link = new int[ limit ]; // Could limit this to MaxDistance.
 
       int position = 0; // position in input.
