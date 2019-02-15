@@ -90,6 +90,7 @@ sealed class Deflator
   public void Go()
   {
     Match = new Matcher( this );
+    Match.Go( this );
 
     if ( RFC1950 ) Output.WriteBits( 16, 0x9c78 );
 
@@ -215,26 +216,27 @@ sealed class Deflator
       BufferFull = false;
       InputWait = false;
       InputRequest = 0;
+      Buffered = 0;
 
-      Buffered = Input.Length;
+      int mlength = d.LZ77 && Input.Length > Matcher.MinMatch ? Input.Length : 0;
 
-      int length = d.LZ77 && Input.Length > Matcher.MinMatch ? Input.Length : 0;
-
-      int bufferSize = CalcBufferSize( length / 3, d.MaxBufferSize );
+      int bufferSize = CalcBufferSize( mlength / 3, d.MaxBufferSize );
       PositionBuffer = new int[ bufferSize ];
       LengthBuffer   = new byte[ bufferSize ];
       DistanceBuffer = new ushort[ bufferSize ];   
       BufferMask = bufferSize - 1;
 
-      HashShift = CalcHashShift( length * 2 );
+      HashShift = CalcHashShift( mlength * 2 );
       HashMask = ( 1u << ( MinMatch * HashShift ) ) - 1;
       HashTable = new int[ HashMask + 1 ];
-     
 
-      if ( length != 0 )
+      if ( mlength == 0 ) Buffered = Input.Length;  
+    }
+
+    public void Go( Deflator d )
+    {
+      if ( Buffered != Input.Length )
       {
-        Buffered = 0;
-        Thread.MemoryBarrier();
         System.Threading.ThreadPool.QueueUserWorkItem( FindMatchesStart, d );
       }
     }
