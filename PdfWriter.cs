@@ -54,6 +54,26 @@ public class PdfWriter // class for writing PDF ( Portable Document Format ) fil
     }
   }
 
+  // Example with an embedded font ( subset ).
+  public static void Example3() 
+  {
+    byte [] freeSansBytes = Util.GetFile( @"c:\PdfFiles\FreeSans.ttf" );
+
+    using( IO.FileStream fs = IO.File.Create( "Example3.pdf") )
+    {
+      PdfWriter w = new Pdf.PdfWriter(); 
+      w.Compress = false;
+      w.Title = "Embedded font example";
+      w.Initialise( fs );
+
+      PdfFont freeSans = new TrueTypeFont( "DJGTGD+Sans", freeSansBytes );
+      w.SetFont( freeSans, 12 );
+      w.Txt( "Hello world" );
+
+      w.Finish();
+    }
+  }
+
   // PDF spec is at https://www.adobe.com/content/dam/acom/en/devnet/pdf/pdfs/PDF32000_2008.pdf
   // Minimum additional files: PdfPage.cs, Deflator.cs, PdfFont.cs, PdfMetric.cs.
   // Other files: PdfTrueType.cs, TrueType.cs, PdfPng.cs, Inflator.cs, PDfOther.cs, Util.cs, Pdfwriter2.cs.
